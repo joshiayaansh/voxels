@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mod Panel | Voxels</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: 'Inter', 'Segoe UI', sans-serif;
+            background: radial-gradient(circle at top left, #111827, #0b1220 45%, #05070d);
+            color: #e5e7eb;
+            padding: 32px 24px;
+        }
+        h1 { margin: 0 0 6px; font-size: 1.8rem; color: #f8fafc; }
+        h2 { font-size: 1.1rem; color: #cbd5e1; margin: 32px 0 12px; border-bottom: 1px solid rgba(148,163,184,0.2); padding-bottom: 8px; }
+        .back { color: #93c5fd; text-decoration: none; font-size: 0.9rem; }
+        .flash {
+            margin: 14px 0;
+            border-radius: 10px;
+            padding: 10px 14px;
+            background: rgba(14, 165, 133, 0.18);
+            color: #6ee7b7;
+            border: 1px solid rgba(52, 211, 153, 0.4);
+            font-size: 0.9rem;
+        }
+        table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+        th { text-align: left; padding: 8px 10px; color: #94a3b8; font-weight: 600; border-bottom: 1px solid rgba(148,163,184,0.18); }
+        td { padding: 10px 10px; border-bottom: 1px solid rgba(148,163,184,0.1); vertical-align: top; }
+        tr:hover td { background: rgba(255,255,255,0.02); }
+        .badge {
+            display: inline-block;
+            border-radius: 6px;
+            padding: 2px 8px;
+            font-size: 0.78rem;
+            font-weight: 700;
+        }
+        .badge.open     { background: rgba(234,179,8,0.2);  color: #fde047; border: 1px solid rgba(234,179,8,0.4); }
+        .badge.approved { background: rgba(34,197,94,0.2);  color: #86efac; border: 1px solid rgba(34,197,94,0.4); }
+        .badge.denied   { background: rgba(239,68,68,0.2);  color: #fca5a5; border: 1px solid rgba(239,68,68,0.4); }
+        .badge.disabled { background: rgba(239,68,68,0.2);  color: #fca5a5; border: 1px solid rgba(239,68,68,0.4); }
+        .badge.admin    { background: rgba(139,92,246,0.2); color: #c4b5fd; border: 1px solid rgba(139,92,246,0.4); }
+        .msg { max-width: 360px; word-break: break-word; color: #cbd5e1; }
+        form { display: inline; }
+        button {
+            border: none;
+            border-radius: 7px;
+            padding: 5px 12px;
+            font-size: 0.82rem;
+            font-weight: 700;
+            cursor: pointer;
+            color: #fff;
+        }
+        .btn-approve { background: #16a34a; }
+        .btn-deny    { background: #dc2626; }
+        .btn-disable { background: #b45309; }
+        .btn-enable  { background: #0369a1; }
+        .btn-admin   { background: #7c3aed; }
+        button:hover { filter: brightness(1.1); }
+        .none { color: #475569; font-style: italic; font-size: 0.88rem; }
+    </style>
+</head>
+<body>
+    <h1>Mod Panel</h1>
+    <a class="back" href="{{ url_for('dashboard') }}">← Back to dashboard</a>
+
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            {% for msg in messages %}
+                <div class="flash">{{ msg }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <h2>Appeals</h2>
+    {% if appeals %}
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Username</th>
+                <th>Message</th>
+                <th>Created</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for appeal in appeals %}
+            <tr>
+                <td>{{ appeal.id }}</td>
+                <td>{{ appeal.username }}</td>
+                <td class="msg">{{ appeal.message }}</td>
+                <td>{{ appeal.created_at }}</td>
+                <td><span class="badge {{ appeal.status }}">{{ appeal.status }}</span></td>
+                <td>
+                    {% if appeal.status == 'open' %}
+                    <form method="post" action="{{ url_for('mod_approve_appeal', appeal_id=appeal.id) }}">
+                        <button class="btn-approve" type="submit">Approve</button>
+                    </form>
+                    <form method="post" action="{{ url_for('mod_deny_appeal', appeal_id=appeal.id) }}" style="margin-left:4px">
+                        <button class="btn-deny" type="submit">Deny</button>
+                    </form>
+                    {% else %}
+                    —
+                    {% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="none">No appeals yet.</p>
+    {% endif %}
+
+    <h2>Users</h2>
+    {% if users %}
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Username</th>
+                <th>Display Name</th>
+                <th>Email</th>
+                <th>Pixels</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for u in users %}
+            <tr>
+                <td>{{ u.id }}</td>
+                <td>{{ u.username }}</td>
+                <td>{{ u.display_name }}</td>
+                <td>{{ u.email }}</td>
+                <td>{{ u.pixels }}</td>
+                <td>
+                    {% if u.is_disabled %}<span class="badge disabled">Disabled</span>{% endif %}
+                    {% if u.is_admin %}<span class="badge admin">Admin</span>{% endif %}
+                    {% if not u.is_disabled and not u.is_admin %}<span style="color:#475569">—</span>{% endif %}
+                </td>
+                <td>
+                    {% if u.is_disabled %}
+                    <form method="post" action="{{ url_for('mod_enable_user', user_id=u.id) }}">
+                        <button class="btn-enable" type="submit">Enable</button>
+                    </form>
+                    {% else %}
+                    <form method="post" action="{{ url_for('mod_disable_user', user_id=u.id) }}">
+                        <button class="btn-disable" type="submit">Disable</button>
+                    </form>
+                    {% endif %}
+                    <form method="post" action="{{ url_for('mod_toggle_admin', user_id=u.id) }}" style="margin-left:4px">
+                        <button class="btn-admin" type="submit">{{ 'Remove Admin' if u.is_admin else 'Make Admin' }}</button>
+                    </form>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="none">No users found.</p>
+    {% endif %}
+</body>
+</html>

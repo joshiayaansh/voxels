@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 import os
 from threading import Lock
-from dotenv import dotenv
+import dotenv
 dotenv.load_dotenv()
 from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
 from flask_socketio import SocketIO, emit, join_room, leave_room
@@ -140,13 +140,22 @@ def init_db():
         """
         CREATE TABLE IF NOT EXISTS appeals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
             message TEXT NOT NULL,
-            submitted_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            status TEXT DEFAULT 'pending'
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            status TEXT DEFAULT 'open',
+            FOREIGN KEY (user_id) REFERENCES users (id)
         )
         """
     )
+    for statement in [
+        "ALTER TABLE users ADD COLUMN is_disabled INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0",
+    ]:
+        try:
+            conn.execute(statement)
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     conn.close()
 
@@ -220,6 +229,10 @@ def login_page():
 
         if not user or not check_password_hash(user["password_hash"], password):
             flash("Invalid username or password.")
+            return render_template("login.html")
+
+        if user["is_disabled"]:
+            flash("This account has been disabled. Submit an appeal below if you think this is a mistake.")
             return render_template("login.html")
 
         session.permanent = True
@@ -739,7 +752,7 @@ def submit_appeal():
         return redirect(url_for("login_page"))
 
     existing = conn.execute(
-        "SELECT id FROM appeals WHERE username = ? AND status = 'pending'", (username,)
+        "SELECT id FROM appeals WHERE user_id = ? AND status = 'open'", (user["id"],)
     ).fetchone()
     if existing:
         conn.close()
@@ -747,8 +760,8 @@ def submit_appeal():
         return redirect(url_for("login_page"))
 
     conn.execute(
-        "INSERT INTO appeals (username, message) VALUES (?, ?)",
-        (username, message),
+        "INSERT INTO appeals (user_id, message) VALUES (?, ?)",
+        (user["id"], message),
     )
     conn.commit()
     conn.close()
@@ -761,6 +774,112 @@ def submit_appeal():
 def logout():
     session.clear()
     return redirect(url_for("login_page"))
+
+
+# ========== MOD PANEL ==========
+
+def is_mod():
+    if not is_logged_in():
+        return False
+    conn = get_db_connection()
+    user = conn.execute("SELECT is_admin FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    conn.close()
+    return bool(user and user["is_admin"])
+
+
+@app.route("/mod")
+def mod_panel():
+    if not is_mod():
+        return redirect(url_for("login_page"))
+
+    conn = get_db_connection()
+    appeals = conn.execute(
+        """
+        SELECT appeals.*, users.username
+        FROM appeals
+        JOIN users ON users.id = appeals.user_id
+        ORDER BY CASE appeals.status WHEN 'open' THEN 0 ELSE 1 END, appeals.created_at DESC
+        """
+    ).fetchall()
+    users = conn.execute(
+        "SELECT id, username, display_name, email, pixels, is_disabled, is_admin FROM users ORDER BY id DESC"
+    ).fetchall()
+    conn.close()
+    return render_template("mod.html", appeals=appeals, users=users)
+
+
+@app.route("/mod/appeal/<int:appeal_id>/approve", methods=["POST"])
+def mod_approve_appeal(appeal_id):
+    if not is_mod():
+        return redirect(url_for("login_page"))
+
+    conn = get_db_connection()
+    appeal = conn.execute("SELECT * FROM appeals WHERE id = ?", (appeal_id,)).fetchone()
+    if appeal:
+        conn.execute("UPDATE appeals SET status = 'approved' WHERE id = ?", (appeal_id,))
+        conn.execute("UPDATE users SET is_disabled = 0 WHERE id = ?", (appeal["user_id"],))
+        conn.commit()
+    conn.close()
+    flash(f"Appeal #{appeal_id} approved — account restored.")
+    return redirect(url_for("mod_panel"))
+
+
+@app.route("/mod/appeal/<int:appeal_id>/deny", methods=["POST"])
+def mod_deny_appeal(appeal_id):
+    if not is_mod():
+        return redirect(url_for("login_page"))
+
+    conn = get_db_connection()
+    conn.execute("UPDATE appeals SET status = 'denied' WHERE id = ?", (appeal_id,))
+    conn.commit()
+    conn.close()
+    flash(f"Appeal #{appeal_id} denied.")
+    return redirect(url_for("mod_panel"))
+
+
+@app.route("/mod/user/<int:user_id>/disable", methods=["POST"])
+def mod_disable_user(user_id):
+    if not is_mod():
+        return redirect(url_for("login_page"))
+    if user_id == session["user_id"]:
+        flash("You can't disable your own account.")
+        return redirect(url_for("mod_panel"))
+
+    conn = get_db_connection()
+    conn.execute("UPDATE users SET is_disabled = 1 WHERE id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+    flash(f"User #{user_id} disabled.")
+    return redirect(url_for("mod_panel"))
+
+
+@app.route("/mod/user/<int:user_id>/enable", methods=["POST"])
+def mod_enable_user(user_id):
+    if not is_mod():
+        return redirect(url_for("login_page"))
+
+    conn = get_db_connection()
+    conn.execute("UPDATE users SET is_disabled = 0 WHERE id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+    flash(f"User #{user_id} re-enabled.")
+    return redirect(url_for("mod_panel"))
+
+
+@app.route("/mod/user/<int:user_id>/toggle_admin", methods=["POST"])
+def mod_toggle_admin(user_id):
+    if not is_mod():
+        return redirect(url_for("login_page"))
+    if user_id == session["user_id"]:
+        flash("You can't change your own admin status.")
+        return redirect(url_for("mod_panel"))
+
+    conn = get_db_connection()
+    conn.execute("UPDATE users SET is_admin = NOT is_admin WHERE id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+    flash(f"User #{user_id} admin status toggled.")
+    return redirect(url_for("mod_panel"))
 
 
 # ========== SOCKETIO MULTIPLAYER EVENTS ==========
