@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Create Game | Voxels</title>
+    <style>
+        * { box-sizing: border-box; }
+        input, select, button, textarea { font-family: inherit; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: 'Inter', 'Segoe UI', sans-serif;
+            background: radial-gradient(circle at top right, #111827, #0b1220 55%, #05070d);
+            color: #e5e7eb;
+            padding: 22px;
+        }
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 14px;
+        }
+        .topbar a {
+            color: #93c5fd;
+            text-decoration: none;
+            font-weight: 700;
+        }
+        .flash {
+            background: rgba(16, 185, 129, 0.2);
+            color: #6ee7b7;
+            border: 1px solid rgba(52, 211, 153, 0.3);
+            padding: 12px 16px;
+            border-radius: 10px;
+            margin-bottom: 14px;
+        }
+        .layout {
+            display: grid;
+            grid-template-columns: 1.5fr 1fr;
+            gap: 14px;
+        }
+        .panel {
+            background: rgba(17, 24, 39, 0.85);
+            border: 1px solid #1e293b;
+            border-radius: 14px;
+            padding: 14px;
+        }
+        .viewport {
+            width: 100%;
+            height: 540px;
+            border-radius: 10px;
+            border: 1px solid #334155;
+            overflow: hidden;
+            background: #0b1220;
+        }
+        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .row4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+        label {
+            display: block;
+            margin: 10px 0 6px;
+            font-weight: 600;
+            color: #cbd5e1;
+        }
+        input[type="text"], input[type="number"], textarea, select {
+            width: 100%;
+            border: 1px solid #334155;
+            border-radius: 10px;
+            background: #0f172a;
+            color: #e2e8f0;
+            padding: 9px 10px;
+            font-size: 0.92rem;
+        }
+        textarea { min-height: 170px; resize: vertical; }
+        .small { min-height: 90px; }
+        .json-view { min-height: 120px; }
+        .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+        button {
+            background: linear-gradient(135deg, #3b82f6, #6366f1);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            padding: 9px 12px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .danger { background: #475569; }
+        .muted { color: #94a3b8; font-size: 0.88rem; margin-top: 8px; }
+        .block-row {
+            display: grid;
+            grid-template-columns: 1fr 100px auto;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .quick-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            margin: 10px 0;
+        }
+        .hint {
+            color: #94a3b8;
+            font-size: 0.86rem;
+            margin-top: 6px;
+        }
+    </style>
+</head>
+<body>
+    <div class="topbar">
+        <h1>3D Game Creator</h1>
+        <div>
+            <a href="{{ url_for('my_games') }}">My Games</a>
+            ·
+            <a href="{{ url_for('feed_page') }}">Feed</a>
+            ·
+            <a href="{{ url_for('dashboard') }}">Dashboard</a>
+        </div>
+    </div>
+
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            {% for msg in messages %}
+                <div class="flash">{{ msg }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <form method="post" action="{{ url_for('game_creator') }}" id="creator-form">
+        <div class="layout">
+            <div class="panel">
+                <div class="viewport" id="viewport"></div>
+
+                <div class="quick-grid">
+                    <button type="button" onclick="quickAddPlatform()">+ Platform</button>
+                    <button type="button" onclick="quickAddCheckpoint()">+ Checkpoint</button>
+                    <button type="button" onclick="quickAddLava()">+ Lava Pit</button>
+                    <button type="button" class="danger" onclick="loadStarterTemplate()">Load Starter Map</button>
+                </div>
+                <div class="hint">Quick mode: use buttons above, then drag gizmos in 3D.</div>
+
+                <div class="row" style="margin-top: 10px;">
+                    <div>
+                        <label for="obj_type">Object Type</label>
+                        <select id="obj_type">
+                            <option value="block">block</option>
+                            <option value="lava">lava</option>
+                            <option value="checkpoint">checkpoint</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="obj_color">Color</label>
+                        <input id="obj_color" type="text" value="#ffffff" />
+                    </div>
+                </div>
+
+                <div class="row4">
+                    <input id="obj_x" type="number" step="0.1" placeholder="x" />
+                    <input id="obj_y" type="number" step="0.1" placeholder="y" />
+                    <input id="obj_z" type="number" step="0.1" placeholder="z" />
+                    <input id="obj_w" type="number" step="0.1" placeholder="w" />
+                </div>
+                <div class="row4" style="margin-top: 8px;">
+                    <input id="obj_h" type="number" step="0.1" placeholder="h" />
+                    <input id="obj_d" type="number" step="0.1" placeholder="d" />
+                    <button type="button" onclick="applyObjectChanges()">Apply</button>
+                    <button type="button" class="danger" onclick="deleteSelectedObject()">Delete</button>
+                </div>
+                <div class="row4" style="margin-top: 8px;">
+                    <input id="obj_rx" type="number" step="0.01" placeholder="rx" />
+                    <input id="obj_ry" type="number" step="0.01" placeholder="ry" />
+                    <input id="obj_rz" type="number" step="0.01" placeholder="rz" />
+                    <div></div>
+                </div>
+
+                <div class="actions">
+                    <button type="button" onclick="addObject()">Add Object</button>
+                    <button type="button" class="danger" onclick="syncConfigJson()">Refresh JSON</button>
+                    <button type="button" onclick="setGizmoMode('translate')">Move Gizmo</button>
+                    <button type="button" onclick="setGizmoMode('scale')">Scale Gizmo</button>
+                    <button type="button" onclick="setGizmoMode('rotate')">Rotate Gizmo</button>
+                </div>
+                <p class="muted">Orbit: drag mouse · Zoom: wheel · Select object: click · Gizmo: drag handles</p>
+            </div>
+
+            <div class="panel">
+                <label for="title">Game Name</label>
+                <input id="title" name="title" type="text" required value="{{ title_value }}" placeholder="My Awesome Parkour" />
+
+                <label for="description">Description</label>
+                <textarea id="description" name="description" class="small">{{ description_value }}</textarea>
+
+                <label for="thumbnail_url">Thumbnail URL</label>
+                <input id="thumbnail_url" name="thumbnail_url" type="text" value="{{ thumbnail_value }}" />
+                <label for="config_json">Level Data</label>
+                <textarea id="config_json" name="config_json" class="json-view" required style="display: none;">{{ default_config_text }}</textarea>
+                <div class="hint">No scripting needed — build your parkour level in 3D and publish.</div>
+                <div class="actions">
+                    <button type="submit" onclick="beforePublish()">Publish Game</button>
+                </div>
+            </div>
+        </div>
+    </form>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+        import { TransformControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/TransformControls.js';
+
+        const configTextArea = document.getElementById('config_json');
+        const container = document.getElementById('viewport');
+
+        let gameConfig;
+        try {
+            gameConfig = JSON.parse(configTextArea.value || '{}');
+        } catch {
+            gameConfig = {};
+        }
+        gameConfig.level = gameConfig.level || {};
+        gameConfig.level.parts = Array.isArray(gameConfig.level.parts) ? gameConfig.level.parts : [];
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color('#0b1220');
+        const camera = new THREE.PerspectiveCamera(65, container.clientWidth / container.clientHeight, 0.1, 1000);
+        camera.position.set(16, 16, 16);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        container.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.target.set(0, 0, 0);
+        controls.update();
+
+        const transformControls = new TransformControls(camera, renderer.domElement);
+        transformControls.setMode('translate');
+        scene.add(transformControls);
+        transformControls.addEventListener('dragging-changed', (event) => {
+            controls.enabled = !event.value;
+        });
+
+        scene.add(new THREE.HemisphereLight('#ffffff', '#c7ceea', 0.8));
+        const sun = new THREE.DirectionalLight('#ffffff', 0.8);
+        sun.position.set(20, 30, 20);
+        scene.add(sun);
+        scene.add(new THREE.GridHelper(200, 100, '#334155', '#1e293b'));
+
+        const raycaster = new THREE.Raycaster();
+        const pointer = new THREE.Vector2();
+        const objects = [];
+        let selectedIndex = -1;
+
+        function materialFor(type, color) {
+            const emissive = type === 'lava' ? '#ff9aa2' : '#000000';
+            return new THREE.MeshStandardMaterial({
+                color: color || '#ffffff',
+                emissive,
+                emissiveIntensity: type === 'lava' ? 0.6 : 0,
+                roughness: 0.7,
+            });
+        }
+
+        function createMesh(part) {
+            const mesh = new THREE.Mesh(
+                new THREE.BoxGeometry(part.w, part.h, part.d),
+                materialFor(part.type || 'block', part.color || '#ffffff')
+            );
+            mesh.position.set(part.x, part.y, part.z);
+            mesh.rotation.set(part.rotX || 0, part.rotY || 0, part.rotZ || 0);
+            return mesh;
+        }
+
+        function updatePartFromMesh(index) {
+            const entry = objects[index];
+            const part = gameConfig.level.parts[index];
+            if (!entry || !part) return;
+            const mesh = entry.mesh;
+            part.x = Number(mesh.position.x.toFixed(3));
+            part.y = Number(mesh.position.y.toFixed(3));
+            part.z = Number(mesh.position.z.toFixed(3));
+
+            const baseW = mesh.geometry.parameters.width || 1;
+            const baseH = mesh.geometry.parameters.height || 1;
+            const baseD = mesh.geometry.parameters.depth || 1;
+            part.w = Number(Math.max(0.2, baseW * mesh.scale.x).toFixed(3));
+            part.h = Number(Math.max(0.2, baseH * mesh.scale.y).toFixed(3));
+            part.d = Number(Math.max(0.2, baseD * mesh.scale.z).toFixed(3));
+            part.rotX = Number(mesh.rotation.x.toFixed(4));
+            part.rotY = Number(mesh.rotation.y.toFixed(4));
+            part.rotZ = Number(mesh.rotation.z.toFixed(4));
+
+            part.color = `#${mesh.material.color.getHexString()}`;
+            part.type = part.type || 'block';
+            setSelected(index);
+            syncConfigJson();
+        }
+
+        function renderParts() {
+            objects.forEach(entry => scene.remove(entry.mesh));
+            objects.length = 0;
+            gameConfig.level.parts.forEach((part, index) => {
+                const mesh = createMesh(part);
+                mesh.userData.index = index;
+                scene.add(mesh);
+                objects.push({ mesh, part });
+            });
+        }
+
+        function syncConfigJson() {
+            configTextArea.value = JSON.stringify(gameConfig, null, 2);
+        }
+
+        function setSelected(index) {
+            selectedIndex = index;
+            objects.forEach((entry, i) => {
+                entry.mesh.material.wireframe = i === selectedIndex;
+            });
+            const part = gameConfig.level.parts[selectedIndex];
+            if (!part) {
+                transformControls.detach();
+                return;
+            }
+
+            const selectedMesh = objects[selectedIndex]?.mesh;
+            if (selectedMesh) {
+                transformControls.attach(selectedMesh);
+            }
+
+            document.getElementById('obj_type').value = part.type || 'block';
+            document.getElementById('obj_color').value = part.color || '#ffffff';
+            document.getElementById('obj_x').value = part.x;
+            document.getElementById('obj_y').value = part.y;
+            document.getElementById('obj_z').value = part.z;
+            document.getElementById('obj_w').value = part.w;
+            document.getElementById('obj_h').value = part.h;
+            document.getElementById('obj_d').value = part.d;
+            document.getElementById('obj_rx').value = part.rotX || 0;
+            document.getElementById('obj_ry').value = part.rotY || 0;
+            document.getElementById('obj_rz').value = part.rotZ || 0;
+        }
+
+        function addPresetPart(part) {
+            gameConfig.level.parts.push(part);
+            renderParts();
+            setSelected(gameConfig.level.parts.length - 1);
+            syncConfigJson();
+        }
+
+        window.addObject = function addObject() {
+            const part = {
+                x: 0, y: 0, z: 0,
+                w: 4, h: 1, d: 4,
+                type: document.getElementById('obj_type').value,
+                color: document.getElementById('obj_color').value || '#ffffff',
+            };
+            gameConfig.level.parts.push(part);
+            renderParts();
+            setSelected(gameConfig.level.parts.length - 1);
+            syncConfigJson();
+        };
+
+        window.quickAddPlatform = function quickAddPlatform() {
+            addPresetPart({ x: 0, y: 0, z: 0, w: 6, h: 1, d: 6, type: 'block', color: '#ffffff', rotX: 0, rotY: 0, rotZ: 0 });
+        };
+
+        window.quickAddCheckpoint = function quickAddCheckpoint() {
+            addPresetPart({ x: 0, y: 2, z: -8, w: 6, h: 1, d: 6, type: 'checkpoint', color: '#e2f0cb', rotX: 0, rotY: 0, rotZ: 0 });
+        };
+
+        window.quickAddLava = function quickAddLava() {
+            addPresetPart({ x: 0, y: -2, z: -18, w: 16, h: 1, d: 16, type: 'lava', color: '#ff9aa2', rotX: 0, rotY: 0, rotZ: 0 });
+        };
+
+        window.loadStarterTemplate = function loadStarterTemplate() {
+            gameConfig.level.parts = [
+                { x: 0, y: -1, z: 0, w: 12, h: 1, d: 12, type: 'block', color: '#ffffff', rotX: 0, rotY: 0, rotZ: 0 },
+                { x: 0, y: 0, z: -14, w: 4, h: 1, d: 4, type: 'block', color: '#b5e2ff', rotX: 0, rotY: 0, rotZ: 0 },
+                { x: 5, y: 1, z: -21, w: 4, h: 1, d: 4, type: 'block', color: '#ffdac1', rotX: 0, rotY: 0, rotZ: 0 },
+                { x: 0, y: 2, z: -30, w: 8, h: 1, d: 8, type: 'checkpoint', color: '#e2f0cb', rotX: 0, rotY: 0, rotZ: 0 },
+                { x: 0, y: -2, z: -45, w: 20, h: 1, d: 20, type: 'lava', color: '#ff9aa2', rotX: 0, rotY: 0, rotZ: 0 },
+                { x: 0, y: 4, z: -45, w: 3, h: 1, d: 3, type: 'block', color: '#c7ceea', rotX: 0, rotY: 0, rotZ: 0 }
+            ];
+            renderParts();
+            setSelected(0);
+            syncConfigJson();
+        };
+
+        window.applyObjectChanges = function applyObjectChanges() {
+            const part = gameConfig.level.parts[selectedIndex];
+            if (!part) return;
+            part.type = document.getElementById('obj_type').value;
+            part.color = document.getElementById('obj_color').value || '#ffffff';
+            part.x = Number(document.getElementById('obj_x').value || 0);
+            part.y = Number(document.getElementById('obj_y').value || 0);
+            part.z = Number(document.getElementById('obj_z').value || 0);
+            part.w = Math.max(0.2, Number(document.getElementById('obj_w').value || 1));
+            part.h = Math.max(0.2, Number(document.getElementById('obj_h').value || 1));
+            part.d = Math.max(0.2, Number(document.getElementById('obj_d').value || 1));
+            part.rotX = Number(document.getElementById('obj_rx').value || 0);
+            part.rotY = Number(document.getElementById('obj_ry').value || 0);
+            part.rotZ = Number(document.getElementById('obj_rz').value || 0);
+            renderParts();
+            setSelected(selectedIndex);
+            syncConfigJson();
+        };
+
+        window.deleteSelectedObject = function deleteSelectedObject() {
+            if (selectedIndex < 0) return;
+            gameConfig.level.parts.splice(selectedIndex, 1);
+            selectedIndex = -1;
+            renderParts();
+            transformControls.detach();
+            syncConfigJson();
+        };
+
+        window.syncConfigJson = syncConfigJson;
+        window.setGizmoMode = function setGizmoMode(mode) {
+            if (mode === 'rotate') {
+                transformControls.setMode('rotate');
+                return;
+            }
+            transformControls.setMode(mode === 'scale' ? 'scale' : 'translate');
+        };
+
+        transformControls.addEventListener('objectChange', () => {
+            if (selectedIndex >= 0) {
+                updatePartFromMesh(selectedIndex);
+            }
+        });
+
+        renderer.domElement.addEventListener('click', (event) => {
+            const rect = renderer.domElement.getBoundingClientRect();
+            pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            raycaster.setFromCamera(pointer, camera);
+            const hits = raycaster.intersectObjects(objects.map(o => o.mesh));
+            if (hits.length > 0) {
+                setSelected(hits[0].object.userData.index);
+            } else {
+                setSelected(-1);
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        });
+
+        function animate() {
+            controls.update();
+            renderer.render(scene, camera);
+            requestAnimationFrame(animate);
+        }
+
+        renderParts();
+        syncConfigJson();
+        animate();
+    </script>
+
+    <script>
+        function beforePublish() {
+            if (window.syncConfigJson) {
+                window.syncConfigJson();
+            }
+            const titleInput = document.getElementById('title');
+            if (!titleInput.value.trim()) {
+                titleInput.value = 'Untitled Game';
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,56 @@
+{
+  "scene": {
+    "background": "#0b1220",
+    "fog": {
+      "color": "#0b1220",
+      "near": 20,
+      "far": 120
+    }
+  },
+  "camera": {
+    "fov": 75,
+    "near": 0.1,
+    "far": 1000,
+    "distance": 10,
+    "heightOffset": 2,
+    "lookAtYOffset": 1
+  },
+  "lighting": {
+    "hemisphere": {
+      "sky": "#ffffff",
+      "ground": "#c7ceea",
+      "intensity": 0.6
+    },
+    "sun": {
+      "color": "#ffffff",
+      "intensity": 0.8,
+      "position": [20, 50, 20]
+    }
+  },
+  "physics": {
+    "gravity": -0.022,
+    "jumpForce": 0.45,
+    "moveSpeed": 0.25,
+    "respawnY": -20
+  },
+  "player": {
+    "spawn": [0, 5, 0]
+  },
+  "materials": {
+    "pastelColors": ["#ffb7b2", "#ffdac1", "#e2f0cb", "#b5e2ff", "#c7ceea"]
+  },
+  "level": {
+    "parts": [
+      { "x": 0, "y": -1, "z": 0, "w": 12, "h": 1, "d": 12, "type": "block", "color": "#ffffff" },
+      { "x": 0, "y": 0, "z": -15, "w": 4, "h": 1, "d": 4 },
+      { "x": 6, "y": 1, "z": -22, "w": 4, "h": 1, "d": 4 },
+      { "x": -6, "y": 2, "z": -30, "w": 4, "h": 1, "d": 4 },
+      { "x": 0, "y": 3, "z": -40, "w": 8, "h": 1, "d": 8, "type": "checkpoint", "color": "#e2f0cb" },
+      { "x": 0, "y": -2, "z": -60, "w": 20, "h": 1, "d": 40, "type": "lava", "color": "#ff9aa2" },
+      { "x": 0, "y": 4, "z": -50, "w": 4, "h": 1, "d": 4 },
+      { "x": 0, "y": 5, "z": -60, "w": 3, "h": 1, "d": 3 },
+      { "x": 0, "y": 6, "z": -70, "w": 2, "h": 1, "d": 2 },
+      { "x": 0, "y": 8, "z": -85, "w": 10, "h": 1, "d": 10, "type": "checkpoint", "color": "#e2f0cb" }
+    ]
+  }
+}

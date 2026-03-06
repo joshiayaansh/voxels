@@ -1,0 +1,1263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voxels</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #0b1220; font-family: 'Nunito', 'Segoe UI', sans-serif; }
+        #ui { position: absolute; top: 20px; left: 20px; color: #cbd5e1; pointer-events: none; }
+        h1 { margin: 0; font-size: 2.5rem; color: #93c5fd; text-shadow: 2px 2px 0px rgba(15, 23, 42, 0.8); }
+        #crosshair { 
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 8px; height: 8px; background: white; border-radius: 50%; pointer-events: none; box-shadow: 0 0 5px rgba(0,0,0,0.3);
+        }
+        #instructions {
+            position: absolute; bottom: 30px; width: 100%; text-align: center;
+            color: #94a3b8; font-size: 1.2rem; font-weight: bold;
+        }
+        .pill {
+            background: rgba(15, 23, 42, 0.9);
+            color: #e2e8f0;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            padding: 10px 20px;
+            border-radius: 20px;
+            display: inline-block;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+        }
+        #authbar {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(15, 23, 42, 0.9);
+            border-radius: 16px;
+            padding: 8px 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 6px 14px rgba(0,0,0,0.3);
+            color: #e2e8f0;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            z-index: 10;
+        }
+        #authbar a {
+            text-decoration: none;
+            font-weight: 700;
+            color: #93c5fd;
+        }
+        #chat {
+            position: absolute;
+            left: 20px;
+            bottom: 20px;
+            width: 340px;
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            border-radius: 14px;
+            box-shadow: 0 6px 14px rgba(0,0,0,0.3);
+            color: #e2e8f0;
+            z-index: 15;
+            pointer-events: auto;
+            padding: 10px;
+        }
+        #chatTitle {
+            font-weight: 800;
+            color: #93c5fd;
+            margin-bottom: 8px;
+        }
+        #chatMessages {
+            height: 150px;
+            overflow-y: auto;
+            font-size: 0.95rem;
+            line-height: 1.35;
+            margin-bottom: 8px;
+            padding-right: 4px;
+        }
+        .chat-line { margin-bottom: 4px; word-break: break-word; }
+        .chat-name { color: #93c5fd; font-weight: 700; }
+        #chatForm {
+            display: flex;
+            gap: 8px;
+        }
+        #chatInput {
+            flex: 1;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            border-radius: 10px;
+            background: rgba(15, 23, 42, 0.75);
+            color: #e2e8f0;
+            padding: 8px 10px;
+            outline: none;
+            font-family: inherit;
+        }
+        #chatSend {
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            border-radius: 10px;
+            background: #1e293b;
+            color: #e2e8f0;
+            font-weight: 700;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-family: inherit;
+        }
+    </style>
+</head>
+<body>
+    <div id="authbar">
+        <span>{{ game_title or 'Voxels' }} · by {{ creator_name or 'Voxels' }}</span>
+        <span>|</span>
+        <span>Hi, {{ display_name or 'Player' }}</span>
+        {% if can_earn_pixels %}
+        <span>|</span>
+        <span id="pixelCounter">🪙 {{ current_pixels }} Pixels (+1/min)</span>
+        {% endif %}
+        <a href="{{ url_for('feed_page') }}">Feed</a>
+        <a href="{{ url_for('logout') }}">Logout</a>
+    </div>
+    <div id="ui">
+        <h1>VOXELS</h1>
+        <div class="pill" style="margin-top: 10px;">WASD: Move | Space: Jump | Shift: Sprint | Ctrl: Crouch | Ctrl+Shift: Roll</div>
+    </div>
+    <div id="chat">
+        <div id="chatTitle">Chat</div>
+        <div id="chatMessages"></div>
+        <form id="chatForm" autocomplete="off">
+            <input id="chatInput" type="text" maxlength="220" placeholder="Type message and press Enter" />
+            <button id="chatSend" type="submit">Send</button>
+        </form>
+    </div>
+    <div id="crosshair"></div>
+    <div id="instructions"><span class="pill">Click Anywhere to Lock Mouse & Play</span></div>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script type="importmap">
+        { "imports": { 
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        } }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+        const gameConfig = {{ game_config|tojson }};
+        const spawnPoint = gameConfig.player?.spawn || [0, 5, 0];
+        const currentDisplayName = {{ (display_name or 'Player')|tojson }};
+        const canEarnPixels = {{ can_earn_pixels|tojson }};
+        let livePixels = {{ current_pixels|tojson }};
+        const pixelCounterEl = document.getElementById('pixelCounter');
+
+        // --- SCENE SETUP (Dark Theme) ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(gameConfig.scene.background);
+        scene.fog = new THREE.Fog(
+            gameConfig.scene.fog.color,
+            gameConfig.scene.fog.near,
+            gameConfig.scene.fog.far
+        );
+
+        const camera = new THREE.PerspectiveCamera(
+            gameConfig.camera.fov,
+            window.innerWidth / window.innerHeight,
+            gameConfig.camera.near,
+            gameConfig.camera.far
+        );
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        const impactOverlay = document.createElement('div');
+        impactOverlay.style.position = 'absolute';
+        impactOverlay.style.inset = '0';
+        impactOverlay.style.pointerEvents = 'none';
+        impactOverlay.style.zIndex = '6';
+        impactOverlay.style.opacity = '0';
+        impactOverlay.style.background = 'radial-gradient(circle at 50% 55%, rgba(191, 219, 254, 0.22), rgba(251, 113, 133, 0.18) 42%, rgba(2, 6, 23, 0) 72%)';
+        impactOverlay.style.mixBlendMode = 'screen';
+        document.body.appendChild(impactOverlay);
+
+        // CSS2D Renderer for name labels
+        const labelRenderer = new CSS2DRenderer();
+        labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        labelRenderer.domElement.style.position = 'absolute';
+        labelRenderer.domElement.style.top = '0';
+        labelRenderer.domElement.style.pointerEvents = 'none';
+        document.body.appendChild(labelRenderer.domElement);
+
+        // --- SOFT LIGHTING ---
+        const hemiLight = new THREE.HemisphereLight(
+            gameConfig.lighting.hemisphere.sky,
+            gameConfig.lighting.hemisphere.ground,
+            gameConfig.lighting.hemisphere.intensity
+        );
+        scene.add(hemiLight);
+        const sun = new THREE.DirectionalLight(
+            gameConfig.lighting.sun.color,
+            gameConfig.lighting.sun.intensity
+        );
+        sun.position.set(...gameConfig.lighting.sun.position);
+        sun.castShadow = true;
+        scene.add(sun);
+
+        // --- PLAYER (Matte Pastel Toy Look) ---
+        const player = new THREE.Group();
+        
+        // Dynamic Avatar Settings from Flask
+        const userColor = '{{ avatar_color }}' || '#ffdac1';
+        const userFace = '{{ avatar_face }}' || 'smile';
+        const userClothes = '{{ avatar_clothes }}' || 'tshirt';
+        const userPants = '{{ avatar_pants }}' || 'basic';
+        const userArmsItem = '{{ avatar_arms }}' || 'basic';
+        const userWristwear = '{{ avatar_wristwear }}' || 'none';
+        const userHeadColor = '{{ avatar_head_color }}' || userColor;
+        const userTorsoColor = '{{ avatar_torso_color }}' || '#3b82f6';
+        const userArmsColor = '{{ avatar_arms_color }}' || userColor;
+        const userLegsColor = '{{ avatar_legs_color }}' || '#1e293b';
+
+        // Generate Face Texture
+        function createFaceTexture(faceType, bgColor) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 128;
+            canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = bgColor;
+            ctx.fillRect(0, 0, 128, 128);
+            
+            ctx.fillStyle = '#000000';
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 6;
+            ctx.lineCap = 'round';
+            
+            if (faceType === 'smile') {
+                ctx.fillRect(32, 40, 12, 20);
+                ctx.fillRect(84, 40, 12, 20);
+                ctx.beginPath(); ctx.arc(64, 80, 24, 0, Math.PI, false); ctx.stroke();
+            } else if (faceType === 'angry') {
+                ctx.fillRect(32, 50, 12, 12);
+                ctx.fillRect(84, 50, 12, 12);
+                ctx.beginPath(); ctx.moveTo(24, 40); ctx.lineTo(48, 48); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(104, 40); ctx.lineTo(80, 48); ctx.stroke();
+                ctx.beginPath(); ctx.arc(64, 90, 16, Math.PI, 0, false); ctx.stroke();
+            } else if (faceType === 'super_super_angry') {
+                ctx.fillStyle = '#991b1b';
+                ctx.fillRect(28, 46, 14, 14);
+                ctx.fillRect(86, 46, 14, 14);
+
+                ctx.strokeStyle = '#111827';
+                ctx.lineWidth = 7;
+                ctx.beginPath(); ctx.moveTo(18, 34); ctx.lineTo(48, 46); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(110, 34); ctx.lineTo(80, 46); ctx.stroke();
+
+                ctx.strokeStyle = '#7f1d1d';
+                ctx.lineWidth = 6;
+                ctx.beginPath(); ctx.moveTo(34, 94); ctx.lineTo(48, 82); ctx.lineTo(64, 94); ctx.lineTo(80, 82); ctx.lineTo(94, 94); ctx.stroke();
+            } else if (faceType === 'surprised') {
+                ctx.fillRect(32, 40, 12, 20);
+                ctx.fillRect(84, 40, 12, 20);
+                ctx.beginPath(); ctx.arc(64, 85, 12, 0, Math.PI*2, false); ctx.stroke();
+            } else if (faceType === 'cool') {
+                ctx.fillRect(20, 40, 36, 20);
+                ctx.fillRect(72, 40, 36, 20);
+                ctx.fillRect(56, 45, 16, 5);
+                ctx.beginPath(); ctx.moveTo(50, 85); ctx.lineTo(80, 80); ctx.stroke();
+            } else if (faceType === 'demon') {
+                ctx.fillStyle = '#dc2626';
+                ctx.fillRect(32, 50, 12, 12);
+                ctx.fillRect(84, 50, 12, 12);
+                ctx.strokeStyle = '#dc2626';
+                ctx.beginPath(); ctx.moveTo(24, 30); ctx.lineTo(48, 45); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(104, 30); ctx.lineTo(80, 45); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(40, 90); ctx.lineTo(50, 80); ctx.lineTo(64, 90); ctx.lineTo(78, 80); ctx.lineTo(88, 90); ctx.stroke();
+            }
+            
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        const matTorso = new THREE.MeshStandardMaterial({ color: userTorsoColor, roughness: 0.8 });
+        const matHeadColor = new THREE.MeshStandardMaterial({ color: userHeadColor, roughness: 0.9 });
+        const matHeadFace = new THREE.MeshStandardMaterial({ map: createFaceTexture(userFace, userHeadColor), roughness: 0.9 });
+        const matArms = new THREE.MeshStandardMaterial({ color: userArmsColor, roughness: 0.85 });
+        const matLegs = new THREE.MeshStandardMaterial({ color: userLegsColor, roughness: 0.8 });
+        const matDrawstring = new THREE.MeshStandardMaterial({ color: '#e2e8f0', roughness: 0.45, metalness: 0.05 });
+        const matDrawstringTip = new THREE.MeshStandardMaterial({ color: '#94a3b8', roughness: 0.35, metalness: 0.3 });
+        const matPantsAccent = new THREE.MeshStandardMaterial({ color: '#e2e8f0', roughness: 0.55, metalness: 0.05 });
+        const matArmored = new THREE.MeshStandardMaterial({ color: '#94a3b8', roughness: 0.45, metalness: 0.45 });
+        const matRobotic = new THREE.MeshStandardMaterial({ color: '#64748b', roughness: 0.3, metalness: 0.7 });
+        const matWristBand = new THREE.MeshStandardMaterial({ color: '#10b981', roughness: 0.45, metalness: 0.05 });
+        const matWatchBand = new THREE.MeshStandardMaterial({ color: '#111827', roughness: 0.5, metalness: 0.1 });
+        const matWatchFace = new THREE.MeshStandardMaterial({ color: '#e2e8f0', roughness: 0.25, metalness: 0.7 });
+
+        const torso = new THREE.Mesh(new THREE.BoxGeometry(1, 1.2, 0.6), matTorso);
+        
+        // Apply face texture only to the front of the head
+        const headMaterials = [
+            matHeadColor, // right
+            matHeadColor, // left
+            matHeadColor, // top
+            matHeadColor, // bottom
+            matHeadFace,  // front
+            matHeadColor  // back
+        ];
+        const head = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.7), headMaterials);
+        head.position.y = 0.95;
+
+        const lArm = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.95, 0.25), matArms);
+        lArm.position.set(-0.63, 0.02, 0);
+        const rArm = lArm.clone();
+        rArm.position.x = 0.63;
+
+        const lLeg = new THREE.Mesh(new THREE.BoxGeometry(0.45, 1, 0.45), matLegs);
+        lLeg.position.set(-0.25, -1.1, 0);
+        const rLeg = lLeg.clone();
+        rLeg.position.x = 0.25;
+
+        const playerRig = { lArm, rArm, lLeg, rLeg, head, torso };
+
+        if (userArmsItem === 'armored') {
+            const leftPlate = new THREE.Mesh(new THREE.BoxGeometry(0.31, 0.58, 0.31), matArmored);
+            leftPlate.position.set(-0.63, 0.15, 0);
+            const rightPlate = leftPlate.clone();
+            rightPlate.position.x = 0.63;
+            player.add(leftPlate, rightPlate);
+        } else if (userArmsItem === 'robotic') {
+            lArm.material = matRobotic;
+            rArm.material = matRobotic;
+
+            const leftJoint = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.28, 10), matArmored);
+            leftJoint.rotation.z = Math.PI / 2;
+            leftJoint.position.set(-0.63, -0.18, 0);
+
+            const rightJoint = leftJoint.clone();
+            rightJoint.position.x = 0.63;
+            player.add(leftJoint, rightJoint);
+        }
+
+        if (userWristwear === 'band') {
+            const leftBand = new THREE.Mesh(new THREE.BoxGeometry(0.29, 0.12, 0.29), matWristBand);
+            leftBand.position.set(-0.63, -0.38, 0);
+            const rightBand = leftBand.clone();
+            rightBand.position.x = 0.63;
+            player.add(leftBand, rightBand);
+        } else if (userWristwear === 'watch') {
+            const strap = new THREE.Mesh(new THREE.BoxGeometry(0.29, 0.1, 0.29), matWatchBand);
+            strap.position.set(-0.63, -0.38, 0);
+
+            const face = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.06, 0.16), matWatchFace);
+            face.position.set(-0.63, -0.31, 0.12);
+            player.add(strap, face);
+        }
+
+        if (userClothes === 'hoodie') {
+            const leftString = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.44, 10), matDrawstring);
+            leftString.position.set(-0.12, 0.22, 0.33);
+            leftString.rotation.x = 0.2;
+
+            const rightString = leftString.clone();
+            rightString.position.x = 0.12;
+
+            const leftTip = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.03, 0.09, 8), matDrawstringTip);
+            leftTip.position.set(-0.12, -0.03, 0.38);
+            leftTip.rotation.x = 0.2;
+
+            const rightTip = leftTip.clone();
+            rightTip.position.x = 0.12;
+
+            player.add(leftString, rightString, leftTip, rightTip);
+        }
+
+        if (userPants === 'jeans') {
+            const belt = new THREE.Mesh(new THREE.BoxGeometry(1, 0.08, 0.5), matPantsAccent);
+            belt.position.set(0, -0.56, 0);
+            player.add(belt);
+        } else if (userPants === 'cargo') {
+            const leftPocket = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.22, 0.1), matPantsAccent);
+            leftPocket.position.set(-0.44, -1.08, 0.24);
+            const rightPocket = leftPocket.clone();
+            rightPocket.position.x = 0.44;
+            player.add(leftPocket, rightPocket);
+        } else if (userPants === 'formal') {
+            const leftStripe = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.0, 0.48), matPantsAccent);
+            leftStripe.position.set(-0.25, -1.1, 0);
+            const rightStripe = leftStripe.clone();
+            rightStripe.position.x = 0.25;
+            player.add(leftStripe, rightStripe);
+        }
+        
+        player.add(torso, head, lArm, rArm, lLeg, rLeg);
+        player.position.set(...spawnPoint);
+        player.traverse(n => { if(n.isMesh) n.castShadow = true; });
+        scene.add(player);
+
+        // ========== MULTIPLAYER SYSTEM ==========
+        const gameId = {{ game_id|tojson }};
+        const socket = io();
+        const chatMessagesEl = document.getElementById('chatMessages');
+        const chatFormEl = document.getElementById('chatForm');
+        const chatInputEl = document.getElementById('chatInput');
+
+        async function claimPlayPixels() {
+            if (!canEarnPixels) {
+                return;
+            }
+            try {
+                const response = await fetch('/claim_play_pixels', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: '{}',
+                    keepalive: true,
+                });
+                if (!response.ok) {
+                    return;
+                }
+                const data = await response.json();
+                if (typeof data.total_pixels === 'number') {
+                    livePixels = data.total_pixels;
+                    if (pixelCounterEl) {
+                        pixelCounterEl.textContent = `🪙 ${livePixels} Pixels (+1/min)`;
+                    }
+                }
+            } catch (error) {
+            }
+        }
+
+        if (canEarnPixels) {
+            window.setInterval(claimPlayPixels, 60000);
+            window.addEventListener('beforeunload', () => {
+                claimPlayPixels();
+            });
+        }
+
+        function addChatLine(name, text, isSelf = false) {
+            const line = document.createElement('div');
+            line.className = 'chat-line';
+
+            const who = document.createElement('span');
+            who.className = 'chat-name';
+            who.textContent = isSelf ? 'You' : name;
+
+            const message = document.createElement('span');
+            message.textContent = `: ${text}`;
+
+            line.appendChild(who);
+            line.appendChild(message);
+            chatMessagesEl.appendChild(line);
+            chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+        }
+        
+        const remotePlayers = new Map(); // player_id -> { group, label, avatar }
+        
+        // Create a remote player avatar
+        function createRemotePlayer(playerData) {
+            const remoteGroup = new THREE.Group();
+            
+            const avatar = playerData.avatar;
+            
+            // Materials
+            const matTorsoRemote = new THREE.MeshStandardMaterial({ color: avatar.torso_color, roughness: 0.8 });
+            const matHeadColorRemote = new THREE.MeshStandardMaterial({ color: avatar.head_color, roughness: 0.9 });
+            const matHeadFaceRemote = new THREE.MeshStandardMaterial({ map: createFaceTexture(avatar.face, avatar.head_color), roughness: 0.9 });
+            const matArmsRemote = new THREE.MeshStandardMaterial({ color: avatar.arms_color, roughness: 0.85 });
+            const matLegsRemote = new THREE.MeshStandardMaterial({ color: avatar.legs_color, roughness: 0.8 });
+            
+            // Body parts
+            const torsoRemote = new THREE.Mesh(new THREE.BoxGeometry(1, 1.2, 0.6), matTorsoRemote);
+            
+            const headMaterialsRemote = [
+                matHeadColorRemote, matHeadColorRemote, matHeadColorRemote,
+                matHeadColorRemote, matHeadFaceRemote, matHeadColorRemote
+            ];
+            const headRemote = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.7), headMaterialsRemote);
+            headRemote.position.y = 0.95;
+            
+            const lArmRemote = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.95, 0.25), matArmsRemote);
+            lArmRemote.position.set(-0.63, 0.02, 0);
+            const rArmRemote = lArmRemote.clone();
+            rArmRemote.position.x = 0.63;
+            
+            const lLegRemote = new THREE.Mesh(new THREE.BoxGeometry(0.45, 1, 0.45), matLegsRemote);
+            lLegRemote.position.set(-0.25, -1.1, 0);
+            const rLegRemote = lLegRemote.clone();
+            rLegRemote.position.x = 0.25;
+
+            const rig = {
+                lArm: lArmRemote,
+                rArm: rArmRemote,
+                lLeg: lLegRemote,
+                rLeg: rLegRemote,
+                head: headRemote,
+                torso: torsoRemote,
+            };
+            
+            remoteGroup.add(torsoRemote, headRemote, lArmRemote, rArmRemote, lLegRemote, rLegRemote);
+            remoteGroup.traverse(n => { if(n.isMesh) n.castShadow = true; });
+            
+            // Display name label
+            const labelDiv = document.createElement('div');
+            labelDiv.className = 'player-label';
+            labelDiv.textContent = playerData.display_name;
+            labelDiv.style.color = '#93c5fd';
+            labelDiv.style.fontSize = '16px';
+            labelDiv.style.fontWeight = 'bold';
+            labelDiv.style.backgroundColor = 'rgba(15, 23, 42, 0.85)';
+            labelDiv.style.padding = '4px 10px';
+            labelDiv.style.borderRadius = '12px';
+            labelDiv.style.border = '1px solid rgba(148, 163, 184, 0.4)';
+            labelDiv.style.whiteSpace = 'nowrap';
+            labelDiv.style.textShadow = '1px 1px 2px rgba(0,0,0,0.8)';
+            
+            const label = new CSS2DObject(labelDiv);
+            label.position.set(0, 2.2, 0);
+            remoteGroup.add(label);
+
+            const startPos = playerData.position || { x: spawnPoint[0], y: spawnPoint[1], z: spawnPoint[2] };
+            remoteGroup.position.set(startPos.x || 0, startPos.y || 0, startPos.z || 0);
+            remoteGroup.rotation.y = playerData.rotation || 0;
+            
+            scene.add(remoteGroup);
+            
+            return {
+                group: remoteGroup,
+                label,
+                avatar: playerData.avatar,
+                rig,
+                moveAlpha: 0,
+                targetMoveAlpha: 0,
+                airAlpha: 0,
+                targetAirAlpha: 0,
+                verticalVelocity: 0,
+                stridePhase: Math.random() * Math.PI * 2,
+                landingImpact: 0,
+                jumpImpact: 0,
+                stepCooldown: 0,
+                wasAirborne: false,
+                lastPosition: remoteGroup.position.clone(),
+            };
+        }
+
+        function animateRig(
+            rig,
+            elapsed,
+            moveAlpha,
+            airAlpha,
+            stridePhase = 0,
+            verticalVelocity = 0,
+            root = null,
+            landingImpact = 0,
+            jumpImpact = 0,
+            crouchAlpha = 0,
+            sprintAlpha = 0,
+            rollAlpha = 0,
+            rollPhase = 0
+        ) {
+            const walkCycle = Math.sin(stridePhase);
+            const walkSwing = walkCycle * (1.05 + sprintAlpha * 0.55) * moveAlpha;
+            const idleBob = Math.sin(elapsed * 3.2) * 0.028;
+
+            const airborneLerp = Math.min(Math.max(airAlpha, 0), 1);
+            const moveLerp = Math.min(Math.max(moveAlpha, 0), 1);
+            const crouchLerp = Math.min(Math.max(crouchAlpha, 0), 1);
+            const sprintLerp = Math.min(Math.max(sprintAlpha, 0), 1);
+            const rollLerp = Math.min(Math.max(rollAlpha, 0), 1);
+            const fallLean = Math.max(-0.22, Math.min(0.28, -verticalVelocity * 0.22));
+            const bounce = Math.abs(Math.sin(stridePhase * 0.95)) * 0.11 * moveLerp;
+            const impactCrush = Math.min(Math.max(landingImpact, 0), 1);
+            const jumpStretch = Math.min(Math.max(jumpImpact, 0), 1);
+
+            let targetLArmX = (walkSwing * (1 - airborneLerp)) + ((-0.62 + fallLean * 0.25) * airborneLerp);
+            let targetRArmX = ((-walkSwing) * (1 - airborneLerp)) + ((-0.62 + fallLean * 0.25) * airborneLerp);
+            let targetLLegX = ((-walkSwing * 0.92) * (1 - airborneLerp)) + ((0.62 - fallLean * 0.2) * airborneLerp);
+            let targetRLegX = ((walkSwing * 0.92) * (1 - airborneLerp)) + ((0.62 - fallLean * 0.2) * airborneLerp);
+            let targetHeadX = ((idleBob - bounce * 0.55) * (1 - airborneLerp)) + ((-0.04 + fallLean * 0.55) * airborneLerp);
+            let targetTorsoX = (0.18 * moveLerp) + (sprintLerp * 0.1) + (fallLean * airborneLerp) - (bounce * 0.45) + (impactCrush * 0.28) - (jumpStretch * 0.12);
+
+            const armRoll = walkCycle * (0.18 + sprintLerp * 0.1) * moveLerp;
+            const legYaw = walkCycle * (0.1 + sprintLerp * 0.06) * moveLerp;
+            const crouchBend = crouchLerp * 0.36;
+
+            targetLArmX += crouchBend * 0.6;
+            targetRArmX += crouchBend * 0.6;
+            targetLLegX += crouchBend;
+            targetRLegX += crouchBend;
+            targetHeadX += crouchBend * 0.25;
+            targetTorsoX += crouchBend * 0.8;
+
+            if (rollLerp > 0.01) {
+                const spin = Math.sin(rollPhase * Math.PI * 4);
+                targetLArmX = (-1.3 * rollLerp) + (targetLArmX * (1 - rollLerp));
+                targetRArmX = (-1.3 * rollLerp) + (targetRArmX * (1 - rollLerp));
+                targetLLegX = (1.35 * rollLerp) + (targetLLegX * (1 - rollLerp));
+                targetRLegX = (1.35 * rollLerp) + (targetRLegX * (1 - rollLerp));
+                targetTorsoX += 0.65 * rollLerp;
+                rig.torso.rotation.z += ((spin * 0.95 * rollLerp) - rig.torso.rotation.z) * 0.28;
+            } else {
+                rig.torso.rotation.z += (0 - rig.torso.rotation.z) * 0.22;
+            }
+
+            rig.lArm.rotation.x += (targetLArmX - rig.lArm.rotation.x) * 0.28;
+            rig.rArm.rotation.x += (targetRArmX - rig.rArm.rotation.x) * 0.28;
+            rig.lLeg.rotation.x += (targetLLegX - rig.lLeg.rotation.x) * 0.26;
+            rig.rLeg.rotation.x += (targetRLegX - rig.rLeg.rotation.x) * 0.26;
+            rig.head.rotation.x += (targetHeadX - rig.head.rotation.x) * 0.2;
+            rig.torso.rotation.x += (targetTorsoX - rig.torso.rotation.x) * 0.18;
+
+            rig.lArm.rotation.z += ((-armRoll) - rig.lArm.rotation.z) * 0.2;
+            rig.rArm.rotation.z += ((armRoll) - rig.rArm.rotation.z) * 0.2;
+            rig.lLeg.rotation.y += ((legYaw) - rig.lLeg.rotation.y) * 0.18;
+            rig.rLeg.rotation.y += ((-legYaw) - rig.rLeg.rotation.y) * 0.18;
+
+            if (root) {
+                const squash = bounce + (Math.max(0, -verticalVelocity) * (1 - airborneLerp) * 0.07) + (impactCrush * 0.2);
+                const stretch = (Math.max(0, verticalVelocity) * airborneLerp * 0.09) + (jumpStretch * 0.24);
+                const crouchCompress = crouchLerp * 0.24;
+                const rollCompress = rollLerp * 0.18;
+                const targetScaleY = 1 - squash - crouchCompress - rollCompress + stretch;
+                const targetScaleXZ = 1 + (squash * 0.65) + (crouchCompress * 0.45) + (rollCompress * 0.65) - (stretch * 0.4);
+
+                root.scale.x += (targetScaleXZ - root.scale.x) * 0.2;
+                root.scale.y += (targetScaleY - root.scale.y) * 0.2;
+                root.scale.z += (targetScaleXZ - root.scale.z) * 0.2;
+            }
+        }
+        
+        // Socket events
+        socket.on('connect', () => {
+            socket.emit('join_game', { game_id: gameId });
+        });
+        
+        socket.on('player_joined', (playerData) => {
+            if (!remotePlayers.has(playerData.player_id)) {
+                remotePlayers.set(playerData.player_id, createRemotePlayer(playerData));
+            }
+        });
+
+        socket.on('room_players', (data) => {
+            const players = Array.isArray(data?.players) ? data.players : [];
+            for (const playerData of players) {
+                if (!remotePlayers.has(playerData.player_id)) {
+                    remotePlayers.set(playerData.player_id, createRemotePlayer(playerData));
+                }
+            }
+        });
+
+        socket.on('chat_message', (data) => {
+            const sender = data?.display_name || 'Player';
+            const text = data?.message || '';
+            if (!text) return;
+            addChatLine(sender, text, sender === currentDisplayName);
+        });
+        
+        socket.on('player_left', (data) => {
+            const remotePlayer = remotePlayers.get(data.player_id);
+            if (remotePlayer) {
+                scene.remove(remotePlayer.group);
+                remotePlayers.delete(data.player_id);
+            }
+        });
+        
+        socket.on('player_moved', (data) => {
+            const remotePlayer = remotePlayers.get(data.player_id);
+            if (remotePlayer && data.position) {
+                const nextX = data.position.x || 0;
+                const nextY = data.position.y || 0;
+                const nextZ = data.position.z || 0;
+
+                const horizontalDelta = Math.hypot(
+                    nextX - remotePlayer.group.position.x,
+                    nextZ - remotePlayer.group.position.z
+                );
+                const verticalDelta = nextY - remotePlayer.group.position.y;
+
+                remotePlayer.targetMoveAlpha = Math.min(1, horizontalDelta * 26);
+                remotePlayer.targetAirAlpha = Math.abs(verticalDelta) > 0.02 ? 1 : 0;
+                remotePlayer.verticalVelocity = verticalDelta / Math.max(POSITION_UPDATE_INTERVAL / 1000, 0.001);
+
+                remotePlayer.group.position.set(data.position.x, data.position.y, data.position.z);
+                remotePlayer.group.rotation.y = data.rotation || 0;
+                remotePlayer.lastPosition.set(nextX, nextY, nextZ);
+            }
+        });
+        
+        // Send position updates
+        let lastPositionUpdate = 0;
+        const POSITION_UPDATE_INTERVAL = 50; // ms
+        
+        function broadcastPosition() {
+            const now = Date.now();
+            if (now - lastPositionUpdate > POSITION_UPDATE_INTERVAL) {
+                socket.emit('player_move', {
+                    game_id: gameId,
+                    position: {
+                        x: player.position.x,
+                        y: player.position.y,
+                        z: player.position.z
+                    },
+                    rotation: yaw
+                });
+                lastPositionUpdate = now;
+            }
+        }
+        
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            socket.emit('leave_game', { game_id: gameId });
+        });
+
+        chatFormEl.addEventListener('submit', (event) => {
+            event.preventDefault();
+            const text = (chatInputEl.value || '').trim();
+            if (!text) return;
+            socket.emit('chat_message', { game_id: gameId, message: text });
+            chatInputEl.value = '';
+        });
+
+        chatInputEl.addEventListener('focus', () => {
+            if (document.pointerLockElement === document.body) {
+                document.exitPointerLock();
+            }
+        });
+
+        // --- PHYSICS & "GAME FEEL" VARS ---
+        let velY = 0;
+        let isGrounded = false;
+        let coyoteFrames = 0;
+        let jumpBufferFrames = 0;
+        let localMoveAlpha = 0;
+        let localAirAlpha = 0;
+        let localStridePhase = 0;
+        let localCrouchAlpha = 0;
+        let localSprintAlpha = 0;
+        let localRollAlpha = 0;
+        let localRollPhase = 0;
+        let isRolling = false;
+        let rollTimer = 0;
+        let rollCooldown = 0;
+        let rollDirection = new THREE.Vector3(0, 0, 1);
+        let localLandingImpact = 0;
+        let localJumpImpact = 0;
+        let localStepCooldown = 0;
+        let wasGroundedLastFrame = false;
+        let cameraImpact = 0;
+        let cameraJumpKick = 0;
+        let chromaFlash = 0;
+        let chromaShift = 0;
+        
+        const GRAVITY = gameConfig.physics.gravity;
+        const JUMP_FORCE = gameConfig.physics.jumpForce;
+        const MOVE_SPEED = gameConfig.physics.moveSpeed;
+        const SPRINT_MULTIPLIER = 1.85;
+        const CROUCH_MULTIPLIER = 0.42;
+        const ROLL_SPEED = MOVE_SPEED * 2.85;
+        const ROLL_DURATION = 0.42;
+        const ROLL_COOLDOWN = 0.6;
+        const spawn = new THREE.Vector3(...spawnPoint);
+        const keys = {};
+        const clock = new THREE.Clock();
+
+        // --- CAMERA VARS ---
+        let pitch = 0;
+        let yaw = Math.PI;
+        let camDist = gameConfig.camera.distance;
+
+        // --- LEVEL GENERATION ---
+        const colliders = [];
+        const lava = [];
+        const checkpoints = [];
+        const pastelColors = gameConfig.materials.pastelColors;
+        const particles = [];
+        const particleGeometry = new THREE.SphereGeometry(0.08, 6, 6);
+        const particleMaterialCache = new Map();
+
+        function getParticleMaterial(color) {
+            if (particleMaterialCache.has(color)) return particleMaterialCache.get(color);
+            const material = new THREE.MeshStandardMaterial({
+                color,
+                transparent: true,
+                opacity: 0.92,
+                roughness: 0.45,
+                metalness: 0.08,
+                emissive: color,
+                emissiveIntensity: 0.12,
+            });
+            particleMaterialCache.set(color, material);
+            return material;
+        }
+
+        function spawnParticleBurst(origin, options = {}) {
+            const {
+                count = 10,
+                color = '#e2e8f0',
+                spread = 0.35,
+                speedMin = 0.9,
+                speedMax = 2.1,
+                lifeMin = 0.2,
+                lifeMax = 0.55,
+                drag = 0.9,
+                gravity = -3.2,
+                size = 0.09,
+            } = options;
+
+            const sharedMaterial = getParticleMaterial(color);
+            for (let i = 0; i < count; i++) {
+                if (particles.length > 320) break;
+                const mesh = new THREE.Mesh(particleGeometry, sharedMaterial.clone());
+                const phi = Math.random() * Math.PI * 2;
+                const up = Math.random() * 0.8 + 0.2;
+                const speed = speedMin + Math.random() * (speedMax - speedMin);
+
+                mesh.scale.setScalar(size * (0.65 + Math.random() * 0.9));
+                mesh.position.set(
+                    origin.x + (Math.random() - 0.5) * spread,
+                    origin.y + Math.random() * (spread * 0.35),
+                    origin.z + (Math.random() - 0.5) * spread
+                );
+                scene.add(mesh);
+
+                particles.push({
+                    mesh,
+                    velocity: new THREE.Vector3(Math.cos(phi) * speed, up * speed, Math.sin(phi) * speed),
+                    drag,
+                    gravity,
+                    life: lifeMin + Math.random() * (lifeMax - lifeMin),
+                    maxLife: lifeMin + Math.random() * (lifeMax - lifeMin),
+                });
+            }
+        }
+
+        function updateParticles(delta) {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.life -= delta;
+                p.velocity.y += p.gravity * delta;
+                p.velocity.multiplyScalar(Math.pow(p.drag, delta * 60));
+                p.mesh.position.addScaledVector(p.velocity, delta);
+
+                const lifeRatio = Math.max(0, p.life / Math.max(p.maxLife, 0.001));
+                p.mesh.scale.multiplyScalar(0.985);
+                p.mesh.material.opacity = 0.92 * lifeRatio;
+
+                if (p.life <= 0) {
+                    scene.remove(p.mesh);
+                    p.mesh.material.dispose();
+                    particles.splice(i, 1);
+                }
+            }
+        }
+
+        function addPart(x, y, z, w, h, d, type = 'block', specificColor = null, rotX = 0, rotY = 0, rotZ = 0) {
+            let color = specificColor || pastelColors[Math.floor(Math.random() * pastelColors.length)];
+            let emissive = type === 'lava' ? '#ff9aa2' : '#000000'; // Pastel red glow for lava
+            
+            const mat = new THREE.MeshStandardMaterial({ 
+                color: color, emissive: emissive, emissiveIntensity: type === 'lava' ? 0.6 : 0, roughness: 0.7
+            });
+            const mesh = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat);
+            mesh.position.set(x,y,z);
+            mesh.rotation.set(rotX || 0, rotY || 0, rotZ || 0);
+            mesh.receiveShadow = true;
+            scene.add(mesh);
+            
+            if(type === 'lava') lava.push(mesh);
+            else if(type === 'checkpoint') checkpoints.push(mesh);
+            else colliders.push(mesh);
+        }
+
+        gameConfig.level.parts.forEach((part) => {
+            addPart(
+                part.x,
+                part.y,
+                part.z,
+                part.w,
+                part.h,
+                part.d,
+                part.type || 'block',
+                part.color || null,
+                part.rotX || 0,
+                part.rotY || 0,
+                part.rotZ || 0
+            );
+        });
+
+        // --- INPUTS ---
+        window.addEventListener('mousedown', (event) => {
+            if (event.target.closest('#chat')) {
+                return;
+            }
+            document.body.requestPointerLock();
+        });
+        window.addEventListener('keydown', e => {
+            const typingInChat = document.activeElement === chatInputEl;
+            if (typingInChat) {
+                return;
+            }
+            keys[e.code] = true;
+            if(e.code === 'Space') jumpBufferFrames = 8;
+
+            const ctrlHeld = !!(keys['ControlLeft'] || keys['ControlRight']);
+            const shiftHeld = !!(keys['ShiftLeft'] || keys['ShiftRight']);
+            if (!e.repeat && ctrlHeld && shiftHeld && !isRolling && rollCooldown <= 0 && isGrounded) {
+                const moveIntent = new THREE.Vector3();
+                if(keys['KeyW']) moveIntent.z -= 1;
+                if(keys['KeyS']) moveIntent.z += 1;
+                if(keys['KeyA']) moveIntent.x -= 1;
+                if(keys['KeyD']) moveIntent.x += 1;
+
+                if (moveIntent.lengthSq() > 0) {
+                    moveIntent.applyAxisAngle(new THREE.Vector3(0,1,0), yaw).normalize();
+                    rollDirection.copy(moveIntent);
+                } else {
+                    rollDirection.set(Math.sin(player.rotation.y), 0, Math.cos(player.rotation.y)).normalize();
+                }
+
+                isRolling = true;
+                rollTimer = ROLL_DURATION;
+                rollCooldown = ROLL_COOLDOWN;
+                localRollAlpha = 1;
+                localRollPhase = 0;
+                localJumpImpact = Math.max(localJumpImpact, 0.65);
+                cameraImpact = Math.max(cameraImpact, 0.45);
+                chromaFlash = Math.max(chromaFlash, 0.35);
+
+                spawnParticleBurst(player.position.clone().add(new THREE.Vector3(0, -1.03, 0)), {
+                    count: 12,
+                    color: '#fde68a',
+                    spread: 0.6,
+                    speedMin: 0.9,
+                    speedMax: 2.2,
+                    lifeMin: 0.16,
+                    lifeMax: 0.46,
+                    drag: 0.9,
+                    gravity: -3.2,
+                    size: 0.075,
+                });
+            }
+        });
+        window.addEventListener('keyup', e => {
+            const typingInChat = document.activeElement === chatInputEl;
+            if (typingInChat) {
+                return;
+            }
+            keys[e.code] = false;
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (document.pointerLockElement === document.body) {
+                yaw -= e.movementX * 0.003;
+                pitch -= e.movementY * 0.003;
+                pitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, pitch));
+            }
+        });
+
+        function update(delta, elapsed) {
+            rollCooldown = Math.max(0, rollCooldown - delta);
+            if (isRolling) {
+                rollTimer -= delta;
+                localRollPhase += delta / Math.max(ROLL_DURATION, 0.001);
+                if (rollTimer <= 0) {
+                    isRolling = false;
+                }
+            }
+
+            // 1. Movement & Rotation
+            const moveVec = new THREE.Vector3();
+            if(keys['KeyW']) moveVec.z -= 1;
+            if(keys['KeyS']) moveVec.z += 1;
+            if(keys['KeyA']) moveVec.x -= 1;
+            if(keys['KeyD']) moveVec.x += 1;
+            const isMoving = moveVec.lengthSq() > 0;
+            const ctrlHeld = !!(keys['ControlLeft'] || keys['ControlRight']);
+            const shiftHeld = !!(keys['ShiftLeft'] || keys['ShiftRight']);
+            const isCrouching = ctrlHeld && !isRolling;
+            const isSprinting = shiftHeld && !ctrlHeld && !isRolling;
+            const speedMultiplier = isCrouching ? CROUCH_MULTIPLIER : (isSprinting ? SPRINT_MULTIPLIER : 1);
+            const activeMoveSpeed = MOVE_SPEED * speedMultiplier;
+            const horizontalSpeed = isRolling ? ROLL_SPEED : (isMoving ? activeMoveSpeed : 0);
+
+            if (isRolling) {
+                player.position.addScaledVector(rollDirection, ROLL_SPEED);
+                player.rotation.y = Math.atan2(rollDirection.x, rollDirection.z);
+            } else if(isMoving) {
+                moveVec.applyAxisAngle(new THREE.Vector3(0,1,0), yaw);
+                moveVec.normalize().multiplyScalar(activeMoveSpeed);
+                player.position.add(moveVec);
+                
+                // Smoothly rotate player model to face movement
+                const targetRotation = Math.atan2(moveVec.x, moveVec.z);
+                let diff = targetRotation - player.rotation.y;
+                while (diff < -Math.PI) diff += Math.PI * 2;
+                while (diff > Math.PI) diff -= Math.PI * 2;
+                player.rotation.y += diff * 0.2; 
+            }
+
+            // 2. Squash and Stretch Recovery (Lerp back to normal size)
+            player.scale.lerp(new THREE.Vector3(1, 1, 1), 0.15);
+
+            // 3. Gravity & Physics Timers
+            velY += GRAVITY;
+            player.position.y += velY;
+            const verticalVelocityBeforeCollision = velY;
+            let landingVelocityMagnitude = 0;
+            let jumpedThisFrame = false;
+
+            if (jumpBufferFrames > 0) jumpBufferFrames--;
+            if (!isGrounded) coyoteFrames--;
+
+            // 4. Collision Detection
+            isGrounded = false;
+            const pBox = new THREE.Box3().setFromCenterAndSize(player.position, new THREE.Vector3(1, 2.5, 1));
+
+            [...colliders, ...checkpoints].forEach(obj => {
+                const b = new THREE.Box3().setFromObject(obj);
+                if(pBox.intersectsBox(b)) {
+                    // Landing on top
+                    if(velY <= 0 && player.position.y > obj.position.y) {
+                        if(velY < -0.3) player.scale.set(1.3, 0.7, 1.3); // Squash on hard landing
+                        landingVelocityMagnitude = Math.max(landingVelocityMagnitude, Math.min(2, -velY));
+                        player.position.y = b.max.y + 1.2;
+                        velY = 0;
+                        isGrounded = true;
+                        coyoteFrames = 8; // Reset coyote time
+                        
+                        if(checkpoints.includes(obj)) {
+                            spawn.copy(obj.position).y += 3;
+                        }
+                    }
+                }
+            });
+
+            // 5. Jump Execution
+            if (jumpBufferFrames > 0 && coyoteFrames > 0) {
+                velY = JUMP_FORCE;
+                jumpBufferFrames = 0;
+                coyoteFrames = 0;
+                player.scale.set(0.7, 1.4, 0.7); // Stretch on jump
+                jumpedThisFrame = true;
+            }
+
+            // 6. Lava Death & Fall out of world
+            lava.forEach(l => {
+                if(new THREE.Box3().setFromObject(l).intersectsBox(pBox)) {
+                    player.position.copy(spawn);
+                    velY = 0;
+                }
+            });
+            if(player.position.y < gameConfig.physics.respawnY) { player.position.copy(spawn); velY = 0; }
+
+            const landedThisFrame = !wasGroundedLastFrame && isGrounded;
+            if (landedThisFrame) {
+                localLandingImpact = Math.max(localLandingImpact, Math.min(1, landingVelocityMagnitude * 0.75 + 0.15));
+                cameraImpact = Math.max(cameraImpact, Math.min(1.3, landingVelocityMagnitude * 0.85 + 0.2));
+                chromaFlash = Math.max(chromaFlash, Math.min(1, landingVelocityMagnitude * 0.55 + 0.2));
+                spawnParticleBurst(player.position.clone().add(new THREE.Vector3(0, -1.05, 0)), {
+                    count: 16,
+                    color: '#f8fafc',
+                    spread: 0.9,
+                    speedMin: 1.2,
+                    speedMax: 3.2,
+                    lifeMin: 0.28,
+                    lifeMax: 0.7,
+                    drag: 0.88,
+                    gravity: -4.6,
+                    size: 0.11,
+                });
+            }
+
+            if (jumpedThisFrame) {
+                localJumpImpact = 1;
+                cameraJumpKick = Math.max(cameraJumpKick, 0.75);
+                chromaFlash = Math.max(chromaFlash, 0.45);
+                spawnParticleBurst(player.position.clone().add(new THREE.Vector3(0, -1.0, 0)), {
+                    count: 10,
+                    color: '#bfdbfe',
+                    spread: 0.55,
+                    speedMin: 1.1,
+                    speedMax: 2.4,
+                    lifeMin: 0.2,
+                    lifeMax: 0.5,
+                    drag: 0.9,
+                    gravity: -2.6,
+                    size: 0.08,
+                });
+            }
+
+            localStepCooldown -= delta;
+            if (isGrounded && localMoveAlpha > 0.5 && localStepCooldown <= 0) {
+                const side = Math.sin(localStridePhase) >= 0 ? 1 : -1;
+                const stepOffset = new THREE.Vector3(side * 0.25, -1.05, 0.04).applyAxisAngle(new THREE.Vector3(0, 1, 0), player.rotation.y);
+                spawnParticleBurst(player.position.clone().add(stepOffset), {
+                    count: 5,
+                    color: '#cbd5e1',
+                    spread: 0.28,
+                    speedMin: 0.5,
+                    speedMax: 1.2,
+                    lifeMin: 0.12,
+                    lifeMax: 0.32,
+                    drag: 0.86,
+                    gravity: -3.2,
+                    size: 0.06,
+                });
+                localStepCooldown = 0.075;
+            }
+
+            // 7. Character animation state
+            const localMoveTarget = Math.min(1, horizontalSpeed / Math.max(MOVE_SPEED, 0.001));
+            const localAirTarget = isGrounded ? 0 : 1;
+            const localCrouchTarget = isCrouching ? 1 : 0;
+            const localSprintTarget = isSprinting ? 1 : 0;
+            localMoveAlpha += (localMoveTarget - localMoveAlpha) * 0.18;
+            localAirAlpha += (localAirTarget - localAirAlpha) * 0.2;
+            localCrouchAlpha += (localCrouchTarget - localCrouchAlpha) * 0.2;
+            localSprintAlpha += (localSprintTarget - localSprintAlpha) * 0.2;
+            localRollAlpha += ((isRolling ? 1 : 0) - localRollAlpha) * 0.3;
+            localStridePhase += delta * (5 + (localMoveAlpha * 11));
+            localLandingImpact = Math.max(0, localLandingImpact - delta * 3.8);
+            localJumpImpact = Math.max(0, localJumpImpact - delta * 4.8);
+            cameraImpact = Math.max(0, cameraImpact - delta * 3.6);
+            cameraJumpKick = Math.max(0, cameraJumpKick - delta * 5.5);
+            chromaFlash = Math.max(0, chromaFlash - delta * 2.7);
+            chromaShift = Math.max(0, chromaShift - delta * 2.4);
+
+            animateRig(
+                playerRig,
+                elapsed,
+                localMoveAlpha,
+                localAirAlpha,
+                localStridePhase,
+                verticalVelocityBeforeCollision,
+                player,
+                localLandingImpact,
+                localJumpImpact,
+                localCrouchAlpha,
+                localSprintAlpha,
+                localRollAlpha,
+                localRollPhase
+            );
+            wasGroundedLastFrame = isGrounded;
+
+            // 8. Camera Positioning
+            const shake = Math.sin(elapsed * 52) * 0.05 * cameraImpact;
+            const sideShake = Math.cos(elapsed * 43) * 0.04 * cameraImpact;
+            const crouchCamDrop = localCrouchAlpha * 0.38;
+            const rollCamDrop = localRollAlpha * 0.28;
+            const kickY = (cameraImpact * 0.24) - (cameraJumpKick * 0.2) - crouchCamDrop - rollCamDrop;
+            const camX = player.position.x + camDist * Math.sin(yaw) * Math.cos(pitch);
+            const camY = player.position.y + camDist * Math.sin(pitch) + gameConfig.camera.heightOffset;
+            const camZ = player.position.z + camDist * Math.cos(yaw) * Math.cos(pitch);
+            
+            camera.position.set(camX + sideShake, camY + kickY + shake, camZ - shake * 0.7);
+            camera.lookAt(player.position.x, player.position.y + (gameConfig.camera.lookAtYOffset ?? 1), player.position.z);
+
+            const fovKick = (cameraImpact * 2.8) + (cameraJumpKick * 1.7) + (localSprintAlpha * 3.2) + (localRollAlpha * 2);
+            camera.fov += (((gameConfig.camera.fov + fovKick) - camera.fov) * 0.22);
+            camera.updateProjectionMatrix();
+
+            const flashMix = Math.max(chromaFlash, (cameraImpact * 0.35) + (cameraJumpKick * 0.2));
+            impactOverlay.style.opacity = `${Math.min(1, flashMix * 0.5)}`;
+            chromaShift = Math.max(chromaShift, flashMix * 3.2);
+            renderer.domElement.style.filter = `saturate(${1 + flashMix * 0.45}) contrast(${1 + flashMix * 0.18}) hue-rotate(${chromaShift * 1.2}deg)`;
+            labelRenderer.domElement.style.filter = `saturate(${1 + flashMix * 0.28})`;
+
+        }
+
+        function animate() {
+            const delta = clock.getDelta();
+            const elapsed = clock.elapsedTime;
+            update(delta, elapsed);
+            updateParticles(delta);
+
+            remotePlayers.forEach((remotePlayer) => {
+                const wasAirborne = remotePlayer.wasAirborne;
+                remotePlayer.moveAlpha += (remotePlayer.targetMoveAlpha - remotePlayer.moveAlpha) * 0.2;
+                remotePlayer.airAlpha += (remotePlayer.targetAirAlpha - remotePlayer.airAlpha) * 0.18;
+                remotePlayer.targetMoveAlpha = Math.max(0, remotePlayer.targetMoveAlpha - delta * 3.2);
+                remotePlayer.targetAirAlpha = Math.max(0, remotePlayer.targetAirAlpha - delta * 2.2);
+                remotePlayer.stridePhase += delta * (5 + (remotePlayer.moveAlpha * 10));
+                const airborneNow = remotePlayer.airAlpha > 0.35;
+
+                if (!wasAirborne && airborneNow && remotePlayer.verticalVelocity > 0.35) {
+                    remotePlayer.jumpImpact = 0.7;
+                    spawnParticleBurst(remotePlayer.group.position.clone().add(new THREE.Vector3(0, -1.0, 0)), {
+                        count: 7,
+                        color: '#93c5fd',
+                        spread: 0.45,
+                        speedMin: 0.9,
+                        speedMax: 1.9,
+                        lifeMin: 0.16,
+                        lifeMax: 0.4,
+                        drag: 0.9,
+                        gravity: -2.8,
+                        size: 0.07,
+                    });
+                }
+
+                if (wasAirborne && !airborneNow) {
+                    remotePlayer.landingImpact = 0.85;
+                    spawnParticleBurst(remotePlayer.group.position.clone().add(new THREE.Vector3(0, -1.02, 0)), {
+                        count: 10,
+                        color: '#e2e8f0',
+                        spread: 0.7,
+                        speedMin: 1,
+                        speedMax: 2.5,
+                        lifeMin: 0.2,
+                        lifeMax: 0.55,
+                        drag: 0.88,
+                        gravity: -4,
+                        size: 0.09,
+                    });
+                }
+
+                remotePlayer.stepCooldown -= delta;
+                if (!airborneNow && remotePlayer.moveAlpha > 0.55 && remotePlayer.stepCooldown <= 0) {
+                    spawnParticleBurst(remotePlayer.group.position.clone().add(new THREE.Vector3(0, -1.02, 0)), {
+                        count: 4,
+                        color: '#cbd5e1',
+                        spread: 0.26,
+                        speedMin: 0.4,
+                        speedMax: 1.05,
+                        lifeMin: 0.1,
+                        lifeMax: 0.26,
+                        drag: 0.86,
+                        gravity: -3,
+                        size: 0.055,
+                    });
+                    remotePlayer.stepCooldown = 0.1;
+                }
+
+                remotePlayer.landingImpact = Math.max(0, remotePlayer.landingImpact - delta * 3.3);
+                remotePlayer.jumpImpact = Math.max(0, remotePlayer.jumpImpact - delta * 4.2);
+                animateRig(
+                    remotePlayer.rig,
+                    elapsed,
+                    remotePlayer.moveAlpha,
+                    remotePlayer.airAlpha,
+                    remotePlayer.stridePhase,
+                    remotePlayer.verticalVelocity,
+                    remotePlayer.group,
+                    remotePlayer.landingImpact,
+                    remotePlayer.jumpImpact,
+                    0,
+                    0,
+                    0,
+                    0
+                );
+                remotePlayer.verticalVelocity *= 0.85;
+                remotePlayer.wasAirborne = airborneNow;
+            });
+
+            broadcastPosition(); // Send position to other players
+            renderer.render(scene, camera);
+            labelRenderer.render(scene, camera); // Render name labels
+            requestAnimationFrame(animate);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>

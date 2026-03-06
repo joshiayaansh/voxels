@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Login | Voxels</title>
+    <style>
+        * { box-sizing: border-box; }
+        input, select, button, textarea {
+            font-family: inherit;
+        }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            font-family: 'Inter', 'Segoe UI', sans-serif;
+            background: radial-gradient(circle at top left, #111827, #0b1220 45%, #05070d);
+            color: #e5e7eb;
+        }
+        .card {
+            width: min(92vw, 420px);
+            background: rgba(17, 24, 39, 0.9);
+            backdrop-filter: blur(4px);
+            border-radius: 18px;
+            padding: 28px;
+            box-shadow: 0 18px 45px rgba(0, 0, 0, 0.45);
+            border: 1px solid rgba(148, 163, 184, 0.22);
+        }
+        h1 {
+            margin: 0 0 8px;
+            font-size: 1.9rem;
+            color: #f8fafc;
+        }
+        p.sub {
+            margin: 0 0 18px;
+            color: #94a3b8;
+            font-size: 0.96rem;
+        }
+        label {
+            display: block;
+            margin: 12px 0 6px;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        input {
+            width: 100%;
+            border: 1px solid #334155;
+            background: #0f172a;
+            color: #e2e8f0;
+            border-radius: 10px;
+            padding: 11px 12px;
+            font-size: 0.95rem;
+            outline: none;
+            transition: border-color .15s ease, box-shadow .15s ease;
+        }
+        input:focus {
+            border-color: #60a5fa;
+            box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.2);
+        }
+        button {
+            width: 100%;
+            margin-top: 18px;
+            border: none;
+            border-radius: 10px;
+            padding: 12px;
+            font-size: 0.96rem;
+            font-weight: 700;
+            color: #fff;
+            background: linear-gradient(135deg, #7aa2ff, #8f7aff);
+            cursor: pointer;
+        }
+        button:hover { filter: brightness(1.03); }
+        .switch {
+            margin-top: 14px;
+            text-align: center;
+            color: #94a3b8;
+            font-size: 0.92rem;
+        }
+        .switch a {
+            color: #93c5fd;
+            text-decoration: none;
+            font-weight: 700;
+        }
+        .appeal {
+            margin-top: 18px;
+            border-top: 1px solid rgba(148, 163, 184, 0.25);
+            padding-top: 14px;
+        }
+        .appeal h2 {
+            margin: 0 0 6px;
+            font-size: 1rem;
+            color: #cbd5e1;
+        }
+        .appeal p {
+            margin: 0 0 10px;
+            color: #94a3b8;
+            font-size: 0.85rem;
+        }
+        .appeal textarea {
+            width: 100%;
+            border: 1px solid #334155;
+            background: #0f172a;
+            color: #e2e8f0;
+            border-radius: 10px;
+            padding: 11px 12px;
+            font-size: 0.92rem;
+            min-height: 90px;
+            outline: none;
+            resize: vertical;
+            transition: border-color .15s ease, box-shadow .15s ease;
+        }
+        .appeal textarea:focus {
+            border-color: #60a5fa;
+            box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.2);
+        }
+        .appeal button {
+            margin-top: 10px;
+            background: linear-gradient(135deg, #0ea5e9, #2563eb);
+        }
+        .flash {
+            margin-bottom: 10px;
+            border-radius: 10px;
+            padding: 10px 12px;
+            background: rgba(127, 29, 29, 0.28);
+            color: #fecaca;
+            border: 1px solid rgba(248, 113, 113, 0.45);
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <main class="card">
+        <h1>Welcome to Voxels</h1>
+        <p class="sub">Log in to continue to Voxels.</p>
+
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                {% for msg in messages %}
+                    <div class="flash">{{ msg }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <form method="post" action="{{ url_for('login_page') }}">
+            <label for="username">Username</label>
+            <input id="username" name="username" type="text" required autocomplete="username" />
+
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" required autocomplete="current-password" />
+
+            <button type="submit">Login and Play</button>
+        </form>
+
+        <div class="switch">
+            I don’t have an account.
+            <a href="{{ url_for('signup_page') }}">Sign up</a>
+        </div>
+
+        <section class="appeal">
+            <h2>Account Disabled? Submit Appeal</h2>
+            <p>Use this only if your account was disabled and marked as appealable.</p>
+            <form method="post" action="{{ url_for('submit_appeal') }}">
+                <label for="appeal_username">Username</label>
+                <input id="appeal_username" name="username" type="text" required autocomplete="username" />
+
+                <label for="appeal_message">Appeal Message</label>
+                <textarea id="appeal_message" name="message" maxlength="1000" required placeholder="Explain why your account should be restored."></textarea>
+
+                <button type="submit">Submit Appeal</button>
+            </form>
+        </section>
+    </main>
+</body>
+</html>

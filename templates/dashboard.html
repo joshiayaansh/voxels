@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard | Voxels</title>
+    <style>
+        * { box-sizing: border-box; }
+        input, select, button, textarea {
+            font-family: inherit;
+        }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            font-family: 'Inter', 'Segoe UI', sans-serif;
+            background: #05070d;
+            color: #e5e7eb;
+        }
+        /* Sidebar */
+        .sidebar {
+            width: 260px;
+            background: #0b1220;
+            border-right: 1px solid #1e293b;
+            display: flex;
+            flex-direction: column;
+            padding: 24px 0;
+        }
+        .brand {
+            font-size: 1.8rem;
+            font-weight: 800;
+            color: #93c5fd;
+            padding: 0 24px;
+            margin-bottom: 32px;
+            text-shadow: 0 2px 10px rgba(147, 197, 253, 0.2);
+        }
+        .nav-item {
+            padding: 14px 24px;
+            color: #94a3b8;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .nav-item:hover {
+            background: #1e293b;
+            color: #f8fafc;
+        }
+        .nav-item.active {
+            background: #1e293b;
+            color: #60a5fa;
+            border-left: 4px solid #60a5fa;
+        }
+        .spacer { flex-grow: 1; }
+        .logout {
+            color: #f87171;
+            text-decoration: none;
+            padding: 14px 24px;
+            font-weight: 600;
+            display: block;
+        }
+        .logout:hover { background: #1e293b; }
+
+        /* Main Content */
+        .main-content {
+            flex-grow: 1;
+            padding: 40px;
+            background: radial-gradient(circle at top right, #111827, #0b1220 60%, #05070d);
+        }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
+        h2 {
+            font-size: 2rem;
+            margin-top: 0;
+            color: #f8fafc;
+            margin-bottom: 24px;
+        }
+
+        /* Cards & Forms */
+        .card {
+            background: rgba(17, 24, 39, 0.8);
+            border: 1px solid #1e293b;
+            border-radius: 16px;
+            padding: 24px;
+            max-width: 600px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        label {
+            display: block;
+            margin: 16px 0 8px;
+            font-weight: 600;
+            color: #cbd5e1;
+        }
+        input[type="text"], select {
+            width: 100%;
+            background: #0f172a;
+            border: 1px solid #334155;
+            color: #e2e8f0;
+            padding: 12px;
+            border-radius: 10px;
+            font-size: 1rem;
+            outline: none;
+        }
+        input[type="text"]:focus, select:focus {
+            border-color: #60a5fa;
+            box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.2);
+        }
+        input[type="color"] {
+            width: 60px;
+            height: 40px;
+            padding: 0;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            background: none;
+        }
+        button {
+            margin-top: 24px;
+            background: linear-gradient(135deg, #3b82f6, #6366f1);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 10px;
+            font-weight: 700;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: filter 0.2s;
+        }
+        button:hover { filter: brightness(1.1); }
+
+        /* Game Card */
+        .game-card {
+            background: linear-gradient(135deg, #1e293b, #0f172a);
+            border: 1px solid #334155;
+            border-radius: 16px;
+            padding: 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            max-width: 600px;
+        }
+        .game-info h3 { margin: 0 0 8px; font-size: 1.4rem; color: #93c5fd; }
+        .game-info p { margin: 0; color: #94a3b8; }
+        .play-btn {
+            background: linear-gradient(135deg, #10b981, #3b82f6);
+            text-decoration: none;
+            padding: 12px 32px;
+            border-radius: 10px;
+            color: white;
+            font-weight: bold;
+            font-size: 1.1rem;
+            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
+        }
+        .play-btn:hover { filter: brightness(1.1); }
+        .secondary-btn {
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            text-decoration: none;
+            padding: 12px 20px;
+            border-radius: 10px;
+            color: white;
+            font-weight: bold;
+            font-size: 1rem;
+            display: inline-block;
+        }
+        .feed-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 16px;
+            max-width: 1000px;
+        }
+        .feed-card {
+            background: rgba(17, 24, 39, 0.85);
+            border: 1px solid #1e293b;
+            border-radius: 14px;
+            padding: 16px;
+        }
+        .feed-card h3 {
+            margin: 0 0 8px;
+            color: #f8fafc;
+            font-size: 1.15rem;
+        }
+        .feed-thumb {
+            width: 100%;
+            height: 140px;
+            border-radius: 10px;
+            object-fit: cover;
+            border: 1px solid #334155;
+            margin-bottom: 10px;
+            background: #0f172a;
+        }
+        .feed-meta {
+            color: #94a3b8;
+            font-size: 0.9rem;
+            margin-bottom: 10px;
+        }
+        .feed-desc {
+            color: #cbd5e1;
+            min-height: 56px;
+        }
+        .empty-text {
+            color: #94a3b8;
+            font-size: 1rem;
+        }
+
+        .flash {
+            background: rgba(16, 185, 129, 0.2);
+            color: #6ee7b7;
+            border: 1px solid rgba(52, 211, 153, 0.3);
+            padding: 12px 16px;
+            border-radius: 10px;
+            margin-bottom: 24px;
+            max-width: 600px;
+        }
+
+        /* Shop & Pixels */
+        .pixels-display {
+            background: rgba(245, 158, 11, 0.15);
+            color: #fbbf24;
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 24px;
+        }
+        .shop-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 16px;
+            margin-top: 16px;
+        }
+        .shop-item {
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+        }
+        .shop-item h4 { margin: 0 0 8px; color: #e2e8f0; font-size: 1.1rem; }
+        .shop-item p { margin: 0 0 16px; color: #fbbf24; font-weight: bold; }
+        .shop-item button {
+            margin-top: 0;
+            width: 100%;
+            padding: 8px;
+            font-size: 0.9rem;
+            background: linear-gradient(135deg, #10b981, #059669);
+        }
+        .shop-item button:disabled {
+            background: #475569;
+            color: #94a3b8;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="brand">VOXELS</div>
+        <div class="nav-item active" onclick="switchTab('games')">📰 Feed</div>
+        <div class="nav-item" onclick="switchTab('my-games')">🎮 My Games</div>
+        <div class="nav-item" onclick="switchTab('account')">👤 Account</div>
+        <div class="nav-item" onclick="switchTab('avatar')">🎨 Avatar</div>
+        <div class="spacer"></div>
+        <a href="{{ url_for('logout') }}" class="logout">🚪 Logout</a>
+    </div>
+
+    <div class="main-content">
+        <div class="pixels-display">
+            🪙 {{ user.pixels }} Pixels
+        </div>
+
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                {% for msg in messages %}
+                    <div class="flash">{{ msg }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <!-- Feed Tab -->
+        <div id="tab-games" class="tab-content active">
+            <h2>Feed</h2>
+            <div style="margin-bottom: 16px;">
+                <a href="{{ url_for('game_creator') }}" class="secondary-btn">Create Game</a>
+            </div>
+            {% if feed_games %}
+            <div class="feed-grid">
+                {% for game in feed_games %}
+                    <div class="feed-card">
+                        {% if game.thumbnail_url %}
+                            <img class="feed-thumb" src="{{ game.thumbnail_url }}" alt="{{ game.title }} thumbnail" />
+                        {% endif %}
+                        <h3>{{ game.title }}</h3>
+                        <div class="feed-meta">By @{{ game.creator_username }} · {{ game.created_at }}</div>
+                        <div class="feed-desc">{{ game.description or 'No description yet.' }}</div>
+                        <a href="{{ url_for('play_user_game', game_id=game.id) }}" class="play-btn" style="display: inline-block; margin-top: 14px;">Play</a>
+                    </div>
+                {% endfor %}
+            </div>
+            {% else %}
+                <p class="empty-text">No games in the feed yet.</p>
+            {% endif %}
+        </div>
+
+        <!-- My Games Tab -->
+        <div id="tab-my-games" class="tab-content">
+            <h2>My Games</h2>
+            {% if my_games_list %}
+            <div class="feed-grid">
+                {% for game in my_games_list %}
+                    <div class="feed-card">
+                        {% if game.thumbnail_url %}
+                            <img class="feed-thumb" src="{{ game.thumbnail_url }}" alt="{{ game.title }} thumbnail" />
+                        {% endif %}
+                        <h3>{{ game.title }}</h3>
+                        <div class="feed-meta">{{ game.created_at }}</div>
+                        <div class="feed-desc">{{ game.description or 'No description yet.' }}</div>
+                        <a href="{{ url_for('play_user_game', game_id=game.id) }}" class="play-btn" style="display: inline-block; margin-top: 14px;">Play</a>
+                    </div>
+                {% endfor %}
+            </div>
+            {% else %}
+                <p class="empty-text">You haven’t created any games yet.</p>
+            {% endif %}
+            <div style="margin-top: 16px;">
+                <a href="{{ url_for('game_creator') }}" class="secondary-btn">Create Game</a>
+            </div>
+        </div>
+
+        <!-- Account Tab -->
+        <div id="tab-account" class="tab-content">
+            <h2>Account Settings</h2>
+            <div class="card">
+                <form method="post" action="{{ url_for('update_account') }}">
+                    <label>Username</label>
+                    <input type="text" value="{{ user.username }}" disabled style="opacity: 0.6; cursor: not-allowed;" />
+                    
+                    <label>Email</label>
+                    <input type="text" value="{{ user.email }}" disabled style="opacity: 0.6; cursor: not-allowed;" />
+
+                    <label for="display_name">Display Name</label>
+                    <input type="text" id="display_name" name="display_name" value="{{ user.display_name }}" required />
+
+                    <button type="submit">Save Account</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Avatar Tab -->
+        <div id="tab-avatar" class="tab-content">
+            <h2>Customize Avatar</h2>
+            <div class="card" style="margin-bottom: 32px;">
+                <form method="post" action="{{ url_for('update_avatar') }}">
+                    <label for="avatar_color">Avatar Color</label>
+                    <input type="color" id="avatar_color" name="avatar_color" value="{{ user.avatar_color or '#ffdac1' }}" />
+
+                    <label for="avatar_head_color">Head Color</label>
+                    <input type="color" id="avatar_head_color" name="avatar_head_color" value="{{ user.avatar_head_color or user.avatar_color or '#ffdac1' }}" />
+
+                    <label for="avatar_torso_color">Shirt / Torso Color</label>
+                    <input type="color" id="avatar_torso_color" name="avatar_torso_color" value="{{ user.avatar_torso_color or '#3b82f6' }}" />
+
+                    <label for="avatar_arms_color">Arms Color</label>
+                    <input type="color" id="avatar_arms_color" name="avatar_arms_color" value="{{ user.avatar_arms_color or user.avatar_color or '#ffdac1' }}" />
+
+                    <label for="avatar_legs_color">Pants / Legs Color</label>
+                    <input type="color" id="avatar_legs_color" name="avatar_legs_color" value="{{ user.avatar_legs_color or '#1e293b' }}" />
+
+                    <label for="avatar_face">Face Expression</label>
+                    <select id="avatar_face" name="avatar_face">
+                        {% for face_id, face_data in FACES.items() %}
+                            {% if face_id in owned_faces %}
+                                <option value="{{ face_id }}" {% if user.avatar_face == face_id %}selected{% endif %}>{{ face_data.name }}</option>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+
+                    <label for="avatar_clothes">Clothes</label>
+                    <select id="avatar_clothes" name="avatar_clothes">
+                        {% for clothes_id, clothes_data in CLOTHES.items() %}
+                            {% if clothes_id in owned_clothes %}
+                                <option value="{{ clothes_id }}" {% if user.avatar_clothes == clothes_id %}selected{% endif %}>{{ clothes_data.name }}</option>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+
+                    <label for="avatar_pants">Pants</label>
+                    <select id="avatar_pants" name="avatar_pants">
+                        {% for pants_id, pants_data in PANTS.items() %}
+                            {% if pants_id in owned_pants %}
+                                <option value="{{ pants_id }}" {% if user.avatar_pants == pants_id %}selected{% endif %}>{{ pants_data.name }}</option>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+
+                    <label for="avatar_arms">Arms</label>
+                    <select id="avatar_arms" name="avatar_arms">
+                        {% for arms_id, arms_data in ARMS.items() %}
+                            {% if arms_id in owned_arms %}
+                                <option value="{{ arms_id }}" {% if user.avatar_arms == arms_id %}selected{% endif %}>{{ arms_data.name }}</option>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+
+                    <label for="avatar_wristwear">Wristwear</label>
+                    <select id="avatar_wristwear" name="avatar_wristwear">
+                        {% for wristwear_id, wristwear_data in WRISTWEAR.items() %}
+                            {% if wristwear_id in owned_wristwear %}
+                                <option value="{{ wristwear_id }}" {% if user.avatar_wristwear == wristwear_id %}selected{% endif %}>{{ wristwear_data.name }}</option>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+
+                    <button type="submit">Save Avatar</button>
+                </form>
+            </div>
+
+            <h2>Avatar Shop</h2>
+            <h3 style="color: #cbd5e1; margin-bottom: 16px;">Faces</h3>
+            <div class="shop-grid" style="margin-bottom: 32px;">
+                {% for face_id, face_data in FACES.items() %}
+                    {% if face_id not in owned_faces %}
+                    <div class="shop-item">
+                        <h4>{{ face_data.name }}</h4>
+                        <p>🪙 {{ face_data.price }}</p>
+                        <form method="post" action="{{ url_for('buy_item') }}">
+                            <input type="hidden" name="item_type" value="face">
+                            <input type="hidden" name="item_id" value="{{ face_id }}">
+                            <button type="submit" {% if user.pixels < face_data.price %}disabled{% endif %}>
+                                {% if user.pixels < face_data.price %}Not Enough Pixels{% else %}Buy{% endif %}
+                            </button>
+                        </form>
+                    </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+
+            <h3 style="color: #cbd5e1; margin-bottom: 16px;">Clothes</h3>
+            <div class="shop-grid">
+                {% for clothes_id, clothes_data in CLOTHES.items() %}
+                    {% if clothes_id not in owned_clothes %}
+                    <div class="shop-item">
+                        <h4>{{ clothes_data.name }}</h4>
+                        <p>🪙 {{ clothes_data.price }}</p>
+                        <form method="post" action="{{ url_for('buy_item') }}">
+                            <input type="hidden" name="item_type" value="clothes">
+                            <input type="hidden" name="item_id" value="{{ clothes_id }}">
+                            <button type="submit" {% if user.pixels < clothes_data.price %}disabled{% endif %}>
+                                {% if user.pixels < clothes_data.price %}Not Enough Pixels{% else %}Buy{% endif %}
+                            </button>
+                        </form>
+                    </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+
+            <h3 style="color: #cbd5e1; margin: 24px 0 16px;">Pants</h3>
+            <div class="shop-grid">
+                {% for pants_id, pants_data in PANTS.items() %}
+                    {% if pants_id not in owned_pants %}
+                    <div class="shop-item">
+                        <h4>{{ pants_data.name }}</h4>
+                        <p>🪙 {{ pants_data.price }}</p>
+                        <form method="post" action="{{ url_for('buy_item') }}">
+                            <input type="hidden" name="item_type" value="pants">
+                            <input type="hidden" name="item_id" value="{{ pants_id }}">
+                            <button type="submit" {% if user.pixels < pants_data.price %}disabled{% endif %}>
+                                {% if user.pixels < pants_data.price %}Not Enough Pixels{% else %}Buy{% endif %}
+                            </button>
+                        </form>
+                    </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+
+            <h3 style="color: #cbd5e1; margin: 24px 0 16px;">Arms</h3>
+            <div class="shop-grid">
+                {% for arms_id, arms_data in ARMS.items() %}
+                    {% if arms_id not in owned_arms %}
+                    <div class="shop-item">
+                        <h4>{{ arms_data.name }}</h4>
+                        <p>🪙 {{ arms_data.price }}</p>
+                        <form method="post" action="{{ url_for('buy_item') }}">
+                            <input type="hidden" name="item_type" value="arms">
+                            <input type="hidden" name="item_id" value="{{ arms_id }}">
+                            <button type="submit" {% if user.pixels < arms_data.price %}disabled{% endif %}>
+                                {% if user.pixels < arms_data.price %}Not Enough Pixels{% else %}Buy{% endif %}
+                            </button>
+                        </form>
+                    </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+
+            <h3 style="color: #cbd5e1; margin: 24px 0 16px;">Wristwear</h3>
+            <div class="shop-grid">
+                {% for wristwear_id, wristwear_data in WRISTWEAR.items() %}
+                    {% if wristwear_id not in owned_wristwear %}
+                    <div class="shop-item">
+                        <h4>{{ wristwear_data.name }}</h4>
+                        <p>🪙 {{ wristwear_data.price }}</p>
+                        <form method="post" action="{{ url_for('buy_item') }}">
+                            <input type="hidden" name="item_type" value="wristwear">
+                            <input type="hidden" name="item_id" value="{{ wristwear_id }}">
+                            <button type="submit" {% if user.pixels < wristwear_data.price %}disabled{% endif %}>
+                                {% if user.pixels < wristwear_data.price %}Not Enough Pixels{% else %}Buy{% endif %}
+                            </button>
+                        </form>
+                    </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function switchTab(tabId) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            // Remove active class from nav items
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            
+            // Show selected tab
+            document.getElementById('tab-' + tabId).classList.add('active');
+            // Highlight clicked nav item
+            event.currentTarget.classList.add('active');
+        }
+    </script>
+</body>
+</html>
